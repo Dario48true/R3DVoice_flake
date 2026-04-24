@@ -1,0 +1,17 @@
+{
+  "name": "redvoice",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "server:dev": "pnpm --filter @redvoice/server dev",
+    "server:test": "pnpm --filter @redvoice/server test"
+  }
+}

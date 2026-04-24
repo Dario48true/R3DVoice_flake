@@ -1,1 +1,15 @@
-node_modules/\ndist/\nbuild/\n*.log\n.env\n.env.local\n.DS_Store\n
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
+.DS_Store
+
+# Prisma
+apps/server/prisma/*.db
+apps/server/prisma/*.db-journal
+
+# Vitest
+coverage/
+
