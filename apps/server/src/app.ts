@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerErrorHandler } from "./errors.js";
 import { authRoutes } from "./auth/routes.js";
+import { roomRoutes } from "./rooms/routes.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -16,6 +17,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/health", async () => ({ status: "ok" }));
   await app.register(authRoutes);
+  await app.register(roomRoutes);
 
   return app;
 }
