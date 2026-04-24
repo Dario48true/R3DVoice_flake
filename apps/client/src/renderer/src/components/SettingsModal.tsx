@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { listAudioInputs, listAudioOutputs, type DeviceInfo } from "../lib/media.js";
+import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 
 type Tab = "devices" | "keybinds" | "compatibility" | "about";
 
@@ -60,7 +62,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): ReactElemen
           </button>
         </div>
         <div style={{ padding: 24, flex: 1, overflow: "auto" }}>
-          {tab === "devices" && <Placeholder label="Device pickers land in Task 6." />}
+          {tab === "devices" && <DevicesTab />}
           {tab === "keybinds" && <Placeholder label="Keybinds UI lands in Task 7." />}
           {tab === "compatibility" && <Placeholder label="Compatibility options land in Task 10." />}
           {tab === "about" && <About />}
@@ -114,4 +116,55 @@ function About(): ReactElement {
 
 export function SettingsSection({ children }: { children: ReactNode }): ReactElement {
   return <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>;
+}
+
+function DevicesTab(): ReactElement {
+  const [mics, setMics] = useState<DeviceInfo[]>([]);
+  const [speakers, setSpeakers] = useState<DeviceInfo[]>([]);
+  const micId = usePrefs((s) => s.micDeviceId);
+  const spkId = usePrefs((s) => s.speakerDeviceId);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([listAudioInputs(), listAudioOutputs()]).then(([ins, outs]) => {
+      if (cancelled) return;
+      setMics(ins);
+      setSpeakers(outs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <SettingsSection>
+      <label>
+        <div className="section-title">Microphone</div>
+        <select
+          value={micId ?? ""}
+          onChange={(e) => prefsActions().setMicDeviceId(e.target.value || null)}
+        >
+          {mics.length === 0 && <option value="">No mic detected</option>}
+          {mics.map((m) => (
+            <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <div className="section-title">Speakers</div>
+        <select
+          value={spkId ?? ""}
+          onChange={(e) => prefsActions().setSpeakerDeviceId(e.target.value || null)}
+        >
+          {speakers.length === 0 && <option value="">Default output</option>}
+          {speakers.map((s) => (
+            <option key={s.deviceId} value={s.deviceId}>{s.label}</option>
+          ))}
+        </select>
+      </label>
+      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+        Changes apply live — no need to rejoin.
+      </div>
+    </SettingsSection>
+  );
 }

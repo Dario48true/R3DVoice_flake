@@ -12,6 +12,7 @@ import {
 } from "../lib/livekit-room.js";
 import type { PreJoinSelection } from "./PreJoinScreen.js";
 import { SettingsModal } from "../components/SettingsModal.js";
+import { usePrefs } from "../lib/prefs-singleton.js";
 
 export interface InRoomScreenProps {
   roomId: string;
@@ -240,6 +241,20 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
     };
   }, [roomWrapper]);
+
+  const prefMic = usePrefs((s) => s.micDeviceId);
+  useEffect(() => {
+    if (conn.phase === "connected" && prefMic) {
+      void roomWrapper.room.switchActiveDevice("audioinput", prefMic);
+    }
+  }, [prefMic, conn.phase, roomWrapper]);
+
+  const prefSpeaker = usePrefs((s) => s.speakerDeviceId);
+  useEffect(() => {
+    if (conn.phase === "connected" && prefSpeaker) {
+      void roomWrapper.room.switchActiveDevice("audiooutput", prefSpeaker);
+    }
+  }, [prefSpeaker, conn.phase, roomWrapper]);
 
   // ESC closes maximize / menu; click-outside closes menu.
   useEffect(() => {
