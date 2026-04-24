@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactElement } from "react";
 import { ApiClient } from "../lib/api.js";
 import { useAuthStore } from "../lib/auth-context.js";
+import { openMicStream } from "../lib/media.js";
 import {
   LiveKitRoom,
   RoomEvent,
@@ -186,9 +187,17 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         api.setToken(token);
         const { token: lkToken, url } = await api.mintLiveKitToken(props.roomId);
         if (cancelled) return;
+        // Plan 4 Task 5 hypothesis #1: Plan 3's `dynacast: false` should've
+        // eliminated the codec collision. Publish mic audio again.
+        const micStream = props.selection.micDeviceId
+          ? await openMicStream(props.selection.micDeviceId)
+          : undefined;
+
         await roomWrapper.join({
           wsUrl: url,
           token: lkToken,
+          ...(micStream !== undefined && { micStream }),
+          publishAudio: true,
           publishScreen: props.selection.publishScreen,
           screenQuality: props.selection.screenQuality,
         });
@@ -299,6 +308,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   }
 
   const sharing = hasScreenShare(snapshot.local);
+  const muted = !(snapshot.local?.isMicrophoneEnabled ?? true);
   const maximizedTile = maximizedId ? tiles.find((t) => t.id === maximizedId) : null;
   const menuParticipantName = menu
     ? (tiles.find((t) => t.id === menu.participantId)?.name ?? "participant")
@@ -358,6 +368,13 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           alignItems: "center",
         }}
       >
+        <button
+          className={`btn ${muted ? "" : "secondary"}`}
+          onClick={() => void roomWrapper.setMuted(!muted)}
+          disabled={conn.phase !== "connected"}
+        >
+          {muted ? "Unmute" : "Mute"}
+        </button>
         <button
           className={`btn ${sharing ? "" : "secondary"}`}
           onClick={() => void handleToggleScreen()}
