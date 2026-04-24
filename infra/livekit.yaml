@@ -1,0 +1,15 @@
+# LiveKit local-dev config — this file ships shared dev secrets.
+# For production you'll generate new keys and never check them in.
+port: 7880
+bind_addresses:
+  - ""                     # listen on all interfaces inside the container
+rtc:
+  tcp_port: 7881           # TCP fallback for media
+  port_range_start: 50000  # UDP range for media
+  port_range_end: 50020
+  use_external_ip: false
+keys:
+  # <api_key>: <api_secret>
+  # DEV ONLY — change before exposing to the internet.
+  devkey-redvoice: devsecret-redvoice-devsecret-redvoice-32
+log_level: info
