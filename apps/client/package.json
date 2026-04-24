@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@redvoice/shared": "workspace:*",
+    "livekit-client": "^2.9.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
