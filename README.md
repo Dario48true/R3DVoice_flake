@@ -2,7 +2,7 @@
 
 Open-source, self-hostable, Discord-style screenshare + voice chat.
 
-**Status:** Plan 3 shipped — media integration working end-to-end (audio + screenshare via LiveKit). Plan 4 next: deployment polish + distinctive UI + installers.
+**Status:** Plan 4 shipped — daily-driver UX complete (Settings modal, persistent prefs, real screen picker, push-to-talk, participant sidebar, copy-link, X11 compat toggle). Plan 5 next: installers, auto-update, deep links, UI polish.
 
 ## Repo Layout (monorepo, pnpm)
 
