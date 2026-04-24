@@ -1,5 +1,6 @@
-import { useState, type FormEvent, type ReactElement } from "react";
+import { useState, useEffect, type FormEvent, type ReactElement } from "react";
 import { useAuthStore } from "../lib/auth-context.js";
+import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 
 type Mode = "login" | "register";
 
@@ -9,8 +10,14 @@ export function LoginScreen(): ReactElement {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
 
+  const prefsServerUrl = usePrefs((s) => s.serverUrl);
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const setServerUrl = useAuthStore((s) => s.setServerUrl);
+
+  // Hydrate in-memory auth-store from persisted prefs on mount.
+  useEffect(() => {
+    setServerUrl(prefsServerUrl);
+  }, [prefsServerUrl, setServerUrl]);
   const status = useAuthStore((s) => s.status);
   const error = useAuthStore((s) => s.error);
   const login = useAuthStore((s) => s.login);
@@ -56,7 +63,10 @@ export function LoginScreen(): ReactElement {
           <input
             type="text"
             value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
+            onChange={(e) => {
+              setServerUrl(e.target.value);
+              prefsActions().setServerUrl(e.target.value);
+            }}
             placeholder="http://localhost:3000"
             spellCheck={false}
           />

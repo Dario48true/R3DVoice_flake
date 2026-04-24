@@ -6,6 +6,8 @@ import {
   subscribeMicLevel,
   type DeviceInfo,
 } from "../lib/media.js";
+import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
+import type { Resolution } from "../lib/prefs-store.js";
 
 export interface ScreenQuality {
   width: number;
@@ -35,14 +37,20 @@ export interface PreJoinScreenProps {
 }
 
 export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
+  const persistedMic = usePrefs((s) => s.micDeviceId);
+  const persistedSpeaker = usePrefs((s) => s.speakerDeviceId);
+  const persistedResolution = usePrefs((s) => s.resolution);
+  const persistedFrameRate = usePrefs((s) => s.frameRate);
+  const persistedShareAudio = usePrefs((s) => s.shareAudio);
+
   const [mics, setMics] = useState<DeviceInfo[]>([]);
   const [speakers, setSpeakers] = useState<DeviceInfo[]>([]);
-  const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
-  const [speakerDeviceId, setSpeakerDeviceId] = useState<string | null>(null);
+  const [micDeviceId, setMicDeviceId] = useState<string | null>(persistedMic);
+  const [speakerDeviceId, setSpeakerDeviceId] = useState<string | null>(persistedSpeaker);
   const [publishScreen, setPublishScreen] = useState(false);
-  const [resolution, setResolution] = useState<keyof typeof RESOLUTIONS>("1080p");
-  const [frameRate, setFrameRate] = useState<30 | 60>(30);
-  const [shareAudio, setShareAudio] = useState(true);
+  const [resolution, setResolution] = useState<keyof typeof RESOLUTIONS>(persistedResolution);
+  const [frameRate, setFrameRate] = useState<30 | 60>(persistedFrameRate);
+  const [shareAudio, setShareAudio] = useState(persistedShareAudio);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [level, setLevel] = useState(0);
@@ -62,8 +70,14 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
       if (cancelled) return;
       setMics(ins);
       setSpeakers(outs);
-      setMicDeviceId(ins[0]?.deviceId ?? null);
-      setSpeakerDeviceId(outs[0]?.deviceId ?? null);
+      const persistedMicValid = persistedMic && ins.some((d) => d.deviceId === persistedMic);
+      if (!persistedMicValid) {
+        setMicDeviceId(ins[0]?.deviceId ?? null);
+      }
+      const persistedSpeakerValid = persistedSpeaker && outs.some((d) => d.deviceId === persistedSpeaker);
+      if (!persistedSpeakerValid) {
+        setSpeakerDeviceId(outs[0]?.deviceId ?? null);
+      }
     })();
     return () => {
       cancelled = true;
@@ -127,7 +141,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
           <div className="section-title">Microphone</div>
           <select
             value={micDeviceId ?? ""}
-            onChange={(e) => setMicDeviceId(e.target.value || null)}
+            onChange={(e) => { const v = e.target.value || null; setMicDeviceId(v); prefsActions().setMicDeviceId(v); }}
           >
             {mics.length === 0 && <option value="">No mic detected</option>}
             {mics.map((m) => (
@@ -159,7 +173,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
           <div className="section-title">Speakers</div>
           <select
             value={speakerDeviceId ?? ""}
-            onChange={(e) => setSpeakerDeviceId(e.target.value || null)}
+            onChange={(e) => { const v = e.target.value || null; setSpeakerDeviceId(v); prefsActions().setSpeakerDeviceId(v); }}
           >
             {speakers.length === 0 && <option value="">Default output</option>}
             {speakers.map((s) => (
@@ -190,7 +204,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
               <div className="section-title">Resolution</div>
               <select
                 value={resolution}
-                onChange={(e) => setResolution(e.target.value as keyof typeof RESOLUTIONS)}
+                onChange={(e) => { const v = e.target.value as keyof typeof RESOLUTIONS; setResolution(v); prefsActions().setResolution(v as Resolution); }}
               >
                 {Object.keys(RESOLUTIONS).map((key) => (
                   <option key={key} value={key}>{key}</option>
@@ -201,7 +215,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
               <div className="section-title">Frame rate</div>
               <select
                 value={frameRate}
-                onChange={(e) => setFrameRate(Number(e.target.value) as 30 | 60)}
+                onChange={(e) => { const v = Number(e.target.value) as 30 | 60; setFrameRate(v); prefsActions().setFrameRate(v); }}
               >
                 <option value={30}>30 fps</option>
                 <option value={60}>60 fps</option>
@@ -211,7 +225,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
               <input
                 type="checkbox"
                 checked={shareAudio}
-                onChange={(e) => setShareAudio(e.target.checked)}
+                onChange={(e) => { const v = e.target.checked; setShareAudio(v); prefsActions().setShareAudio(v); }}
               />
               <span>Include system audio</span>
             </label>
