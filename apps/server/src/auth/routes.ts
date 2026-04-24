@@ -29,6 +29,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         data: { email, displayName, passwordHash },
       });
     } catch (err) {
+      // P2002 = Prisma unique-constraint violation (here: User.email)
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         throw new ConflictError("email already registered");
       }
