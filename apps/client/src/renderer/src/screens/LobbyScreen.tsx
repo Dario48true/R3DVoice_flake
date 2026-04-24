@@ -2,10 +2,16 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, typ
 import { ApiClient } from "../lib/api.js";
 import { createRoomsStore, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
+import { PreJoinScreen, type PreJoinSelection } from "./PreJoinScreen.js";
 
 function useRoomsStore<T>(store: ReturnType<typeof createRoomsStore>, selector: (s: RoomsState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()), () => selector(store.getState()));
 }
+
+type Phase =
+  | { kind: "lobby" }
+  | { kind: "prejoin"; roomId: string }
+  | { kind: "inroom"; roomId: string; selection: PreJoinSelection };
 
 export function LobbyScreen(): ReactElement {
   const user = useAuthStore((s) => s.user);
@@ -25,9 +31,18 @@ export function LobbyScreen(): ReactElement {
   const error = useRoomsStore(store, (s) => s.error);
   const activeRoomId = useRoomsStore(store, (s) => s.activeRoomId);
 
+  const [phase, setPhase] = useState<Phase>({ kind: "lobby" });
+
   useEffect(() => {
     void store.getState().refresh();
   }, [store]);
+
+  // When the rooms-store sets activeRoomId (user clicked a room), transition to prejoin.
+  useEffect(() => {
+    if (activeRoomId && phase.kind === "lobby") {
+      setPhase({ kind: "prejoin", roomId: activeRoomId });
+    }
+  }, [activeRoomId, phase.kind]);
 
   const [newRoomName, setNewRoomName] = useState("");
   const [joinInput, setJoinInput] = useState("");
@@ -45,18 +60,36 @@ export function LobbyScreen(): ReactElement {
     await store.getState().join(joinInput.trim());
   }
 
-  if (activeRoomId) {
-    // Plan 3 replaces this with PreJoinCheck + InRoom screens.
+  if (phase.kind === "prejoin") {
+    return (
+      <PreJoinScreen
+        roomId={phase.roomId}
+        onJoin={(selection) => setPhase({ kind: "inroom", roomId: phase.roomId, selection })}
+        onCancel={() => {
+          store.getState().clearActive();
+          setPhase({ kind: "lobby" });
+        }}
+      />
+    );
+  }
+
+  if (phase.kind === "inroom") {
+    // Plan 3 Task 8 replaces this with InRoomScreen.
     return (
       <div className="centered">
         <div className="form">
-          <h3>Room {activeRoomId}</h3>
+          <h3>In room {phase.roomId}</h3>
           <p style={{ color: "var(--text-dim)" }}>
-            Media isn't wired up yet — this screen is a placeholder until Plan 3 ships the
-            pre-join + in-room experience.
+            Connection wiring (LiveKit) arrives in Task 8.
           </p>
-          <button className="btn secondary" onClick={() => store.getState().clearActive()}>
-            Back to lobby
+          <button
+            className="btn secondary"
+            onClick={() => {
+              store.getState().clearActive();
+              setPhase({ kind: "lobby" });
+            }}
+          >
+            Leave
           </button>
         </div>
       </div>
@@ -68,7 +101,10 @@ export function LobbyScreen(): ReactElement {
       <div className="topbar">
         <strong>RedVoice</strong>
         <span style={{ color: "var(--text-dim)" }}>
-          {user?.displayName} — <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={() => void logout()}>Log out</button>
+          {user?.displayName} —{" "}
+          <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={() => void logout()}>
+            Log out
+          </button>
         </span>
       </div>
 
