@@ -114,15 +114,15 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
             <Item icon="🔜">Advanced mic options (gain, AGC, noise gate)</Item>
           </Group>
 
-          <Group title="Later (Plan 6)" color="#888">
-            <Item icon="📅">Mobile clients — iOS &amp; Android (voice + viewing; no screenshare from mobile)</Item>
-          </Group>
-
           <Group title="Not planned" color="var(--text-dim)">
             <Item icon="✗">Server-side recording</Item>
             <Item icon="✗">Spatial audio</Item>
             <Item icon="✗">Publishing screenshare FROM mobile (iOS limitation)</Item>
             <Item icon="✗">Code signing (maybe later)</Item>
+          </Group>
+
+          <Group title="Future — after desktop is solid" color="#555">
+            <Item icon="🌅">Mobile clients — iOS &amp; Android (voice + viewing only; won't start until Plan 5 ships + voice is stable in the wild)</Item>
           </Group>
         </div>
       </div>
