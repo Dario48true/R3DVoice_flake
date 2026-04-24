@@ -15,4 +15,6 @@ export interface RedVoiceBridge {
   cancelScreenPicker(): Promise<void>;
   setPttKeybind(accelerator: string | null): Promise<void>;
   onPttEvent(cb: (pressed: boolean) => void): () => void;
+  setCompatibilityEnv(enabled: boolean): Promise<void>;
+  relaunch(): Promise<void>;
 }

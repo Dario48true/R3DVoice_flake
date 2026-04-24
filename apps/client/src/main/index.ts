@@ -1,5 +1,6 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, session } from "electron";
 import { join } from "node:path";
+import { existsSync, writeFileSync, rmSync } from "node:fs";
 import { saveToken, getToken, clearToken } from "./token-store.js";
 import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.js";
 import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
@@ -11,6 +12,21 @@ const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
 // REDVOICE_USER_DATA_DIR=/tmp/redvoice-b pnpm --filter @redvoice/client dev
 if (process.env["REDVOICE_USER_DATA_DIR"]) {
   app.setPath("userData", process.env["REDVOICE_USER_DATA_DIR"]);
+}
+
+// Self-relaunch compatibility mode: if a prior session set compat mode, honor it.
+try {
+  const userData = process.env["REDVOICE_USER_DATA_DIR"] ?? app.getPath("userData");
+  const compatFlagPath = join(userData, "compat.flag");
+  if (
+    process.platform === "linux" &&
+    existsSync(compatFlagPath) &&
+    !process.argv.includes("--ozone-platform=x11")
+  ) {
+    app.commandLine.appendSwitch("ozone-platform", "x11");
+  }
+} catch {
+  // Too early; skip. Flag will take effect on the next launch.
 }
 
 async function createWindow(): Promise<void> {
@@ -49,6 +65,19 @@ function registerIpcHandlers(): void {
         if (!w.webContents.isDestroyed()) w.webContents.send("keybind:ptt", pressed);
       });
     });
+  });
+  ipcMain.handle("app:set-compatibility-env", (_evt, enabled: unknown) => {
+    const userData = process.env["REDVOICE_USER_DATA_DIR"] ?? app.getPath("userData");
+    const flagPath = join(userData, "compat.flag");
+    if (enabled === true) {
+      writeFileSync(flagPath, "1");
+    } else {
+      rmSync(flagPath, { force: true });
+    }
+  });
+  ipcMain.handle("app:relaunch", () => {
+    app.relaunch();
+    app.exit(0);
   });
 }
 

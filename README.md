@@ -52,6 +52,15 @@ Screenshare: tick "Share a screen" in the pre-join check, click "Join now", pick
 | `PORT` | HTTP port (optional) | `3000` |
 | `HOST` | Bind address (optional) | `0.0.0.0` |
 
+## Cross-OS notes
+
+| OS | Screenshare | System audio | Notes |
+|---|---|---|---|
+| **Windows** | Works | Works (`loopback`) | No extra setup |
+| **Linux (XWayland)** | Works | Works via PipeWire portal | Enable "Compatibility mode" in Settings if on native Wayland and screenshare is glitchy |
+| **Linux (Wayland native)** | Works (picker UX varies by compositor) | Requires `xdg-desktop-portal` ≥ 1.14 | |
+| **macOS** | Works | Limited (needs permission) | Grant Screen Recording permission in System Settings → Privacy & Security |
+
 ## HTTP API
 
 All non-auth endpoints require `Authorization: Bearer <jwt>`.

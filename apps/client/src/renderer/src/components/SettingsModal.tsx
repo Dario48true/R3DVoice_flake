@@ -64,7 +64,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): ReactElemen
         <div style={{ padding: 24, flex: 1, overflow: "auto" }}>
           {tab === "devices" && <DevicesTab />}
           {tab === "keybinds" && <KeybindsTab />}
-          {tab === "compatibility" && <Placeholder label="Compatibility options land in Task 10." />}
+          {tab === "compatibility" && <CompatibilityTab />}
           {tab === "about" && <About />}
         </div>
       </div>
@@ -164,6 +164,44 @@ function DevicesTab(): ReactElement {
       </label>
       <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
         Changes apply live — no need to rejoin.
+      </div>
+    </SettingsSection>
+  );
+}
+
+function CompatibilityTab(): ReactElement {
+  const enabled = usePrefs((s) => s.compatibilityMode);
+
+  async function toggle(): Promise<void> {
+    const next = !enabled;
+    prefsActions().setCompatibilityMode(next);
+    await window.redvoice.setCompatibilityEnv(next);
+  }
+
+  async function relaunch(): Promise<void> {
+    await window.redvoice.relaunch();
+  }
+
+  return (
+    <SettingsSection>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input type="checkbox" checked={enabled} onChange={() => void toggle()} />
+        <span>X11 compatibility mode (Linux/Wayland)</span>
+      </label>
+      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+        Forces Electron through XWayland. Use if screenshare glitches on Wayland.
+        Takes effect after relaunch.
+      </div>
+      <div>
+        <button className="btn" onClick={() => void relaunch()}>Relaunch app</button>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+        Platform-specific notes:
+        <ul style={{ marginTop: 4 }}>
+          <li><strong>macOS</strong>: grant Screen Recording permission in System Settings → Privacy</li>
+          <li><strong>Linux</strong>: system audio in screenshare needs PipeWire portal ≥ 1.14</li>
+          <li><strong>Windows</strong>: system audio uses "loopback" — no setup needed</li>
+        </ul>
       </div>
     </SettingsSection>
   );
