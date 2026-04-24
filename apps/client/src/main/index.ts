@@ -1,6 +1,7 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, session } from "electron";
 import { join } from "node:path";
 import { saveToken, getToken, clearToken } from "./token-store.js";
+import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.js";
 
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
@@ -44,28 +45,24 @@ function registerIpcHandlers(): void {
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
+  registerScreenPickerHandlers();
 
-  // getDisplayMedia requires an explicit handler in Electron — without it the
-  // renderer's request returns "Not supported". MVP: auto-pick the first screen
-  // source. Plan 4 replaces this with a real picker UI.
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
-    try {
-      const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
-      if (sources.length === 0) {
-        callback({});
-        return;
-      }
-      // On Windows, "loopback" captures system audio with the screenshare.
-      // On macOS/Linux this value is rejected — omit audio there and rely on
-      // the OS portal (Linux PipeWire handles audio via the system picker).
-      if (process.platform === "win32") {
-        callback({ video: sources[0]!, audio: "loopback" });
-      } else {
-        callback({ video: sources[0]! });
-      }
-    } catch (err) {
-      console.error("desktopCapturer.getSources failed:", err);
+    const sourceId = await openScreenPicker();
+    if (!sourceId) {
       callback({});
+      return;
+    }
+    const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+    const picked = sources.find((s) => s.id === sourceId);
+    if (!picked) {
+      callback({});
+      return;
+    }
+    if (process.platform === "win32") {
+      callback({ video: picked, audio: "loopback" });
+    } else {
+      callback({ video: picked });
     }
   });
 

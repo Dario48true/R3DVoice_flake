@@ -10,4 +10,7 @@ export interface RedVoiceBridge {
   clearToken(): Promise<void>;
   /** Platform string: "darwin" | "linux" | "win32". */
   platform(): string;
+  listScreenSources(): Promise<Array<{ id: string; name: string; thumbnailDataUrl: string }>>;
+  selectScreenSource(sourceId: string): Promise<void>;
+  cancelScreenPicker(): Promise<void>;
 }

@@ -6,6 +6,9 @@ const bridge: RedVoiceBridge = {
   getToken: () => ipcRenderer.invoke("auth:get-token"),
   clearToken: () => ipcRenderer.invoke("auth:clear-token"),
   platform: () => process.platform,
+  listScreenSources: () => ipcRenderer.invoke("screen-picker:list"),
+  selectScreenSource: (sourceId) => ipcRenderer.invoke("screen-picker:select", sourceId),
+  cancelScreenPicker: () => ipcRenderer.invoke("screen-picker:cancel"),
 };
 
 contextBridge.exposeInMainWorld("redvoice", bridge);
