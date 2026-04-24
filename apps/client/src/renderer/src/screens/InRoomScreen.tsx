@@ -13,6 +13,7 @@ import {
 import type { PreJoinSelection } from "./PreJoinScreen.js";
 import { SettingsModal } from "../components/SettingsModal.js";
 import { usePrefs } from "../lib/prefs-singleton.js";
+import { CopyLinkButton } from "../components/CopyLinkButton.js";
 
 export interface InRoomScreenProps {
   roomId: string;
@@ -344,6 +345,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
   const sharing = hasScreenShare(snapshot.local);
   const muted = !(snapshot.local?.isMicrophoneEnabled ?? true);
+  const sharingParticipants = tiles.filter((t) => t.screenTrack !== null);
   const maximizedTile = maximizedId ? tiles.find((t) => t.id === maximizedId) : null;
   const menuParticipantName = menu
     ? (tiles.find((t) => t.id === menu.participantId)?.name ?? "participant")
@@ -353,10 +355,24 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     <div className="app">
       <div className="topbar">
         <strong>RedVoice — In room</strong>
-        <span style={{ color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
-          {conn.phase === "connecting" && "Connecting…"}
-          {conn.phase === "connected" && `${tiles.length} participant(s)`}
-          {conn.phase === "error" && `Error: ${conn.message}`}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-dim)" }}>
+          {conn.phase === "connecting" && <span>Connecting…</span>}
+          {conn.phase === "connected" && <span>{tiles.length} participant(s)</span>}
+          {conn.phase === "error" && <span>Error: {conn.message}</span>}
+          {sharingParticipants.length > 0 && (
+            <button
+              className="btn secondary"
+              style={{ padding: "4px 10px", fontSize: 12 }}
+              onClick={() => {
+                const first = sharingParticipants[0];
+                if (first) setMaximizedId(first.id);
+              }}
+              title="Click to focus"
+            >
+              👁 {sharingParticipants.map((s) => s.name).join(", ")} sharing
+            </button>
+          )}
+          <CopyLinkButton roomId={props.roomId} serverUrl={serverUrl} />
           <button
             className="btn secondary"
             style={{ padding: "4px 8px" }}
@@ -365,31 +381,55 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           >
             ⚙
           </button>
-        </span>
+        </div>
       </div>
 
-      <div style={{ padding: 24, flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
-        {conn.phase === "error" && <div className="error">{conn.message}</div>}
-        {maximizedTile ? (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <ParticipantTile p={maximizedTile} maximized callbacks={tileCallbacks} />
-            <div style={{ color: "var(--text-dim)", marginTop: 8, fontSize: 12 }}>
-              Double-click again or press ESC to exit fullscreen
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: 12,
-            }}
-          >
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        <aside
+          style={{
+            width: 200,
+            background: "var(--bg-elev)",
+            borderRight: "1px solid var(--border)",
+            overflowY: "auto",
+            padding: 12,
+            flexShrink: 0,
+          }}
+        >
+          <div className="section-title">Participants</div>
+          <ul className="room-list">
             {tiles.map((p) => (
-              <ParticipantTile key={p.id} p={p} maximized={false} callbacks={tileCallbacks} />
+              <li key={p.id}>
+                <button onClick={() => setMaximizedId(p.id)}>
+                  {p.name}{p.isLocal && " (you)"}
+                  {p.screenTrack && <span style={{ color: "var(--accent)", marginLeft: 6 }}>●</span>}
+                </button>
+              </li>
             ))}
-          </div>
-        )}
+          </ul>
+        </aside>
+        <div style={{ padding: 24, flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
+          {conn.phase === "error" && <div className="error">{conn.message}</div>}
+          {maximizedTile ? (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+              <ParticipantTile p={maximizedTile} maximized callbacks={tileCallbacks} />
+              <div style={{ color: "var(--text-dim)", marginTop: 8, fontSize: 12 }}>
+                Double-click again or press ESC to exit fullscreen
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {tiles.map((p) => (
+                <ParticipantTile key={p.id} p={p} maximized={false} callbacks={tileCallbacks} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div
