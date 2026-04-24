@@ -54,7 +54,20 @@ function ParticipantTile({
     const track = p.screenTrack;
     if (!el || !track) return;
     track.attach(el);
+    // HiDPI: declare the source's intrinsic size so CSS `object-fit` can scale
+    // without upscaling blur. Track settings may not be available immediately,
+    // so re-check once after attach.
+    const applyDimensions = (): void => {
+      const settings = track.mediaStreamTrack.getSettings();
+      if (settings.width && settings.height) {
+        el.width = settings.width;
+        el.height = settings.height;
+      }
+    };
+    applyDimensions();
+    const retry = setTimeout(applyDimensions, 500);
     return () => {
+      clearTimeout(retry);
       track.detach(el);
     };
   }, [p.screenTrack]);
