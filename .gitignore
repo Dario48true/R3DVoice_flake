@@ -1,0 +1,1 @@
+node_modules/\ndist/\nbuild/\n*.log\n.env\n.env.local\n.DS_Store\n
