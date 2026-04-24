@@ -87,7 +87,28 @@ app.whenReady().then(async () => {
   registerScreenPickerHandlers();
   initAutoUpdate();
 
+  // On Wayland, xdg-desktop-portal is the picker — the OS won't let any app
+  // enumerate screens without the user clicking in the portal dialog first.
+  // So our custom picker would stack on top of the OS picker and hang on
+  // "Loading sources…". Skip our UI on Wayland, defer entirely to the portal.
+  const isWayland =
+    process.platform === "linux" &&
+    (process.env["XDG_SESSION_TYPE"] === "wayland" ||
+      Boolean(process.env["WAYLAND_DISPLAY"]));
+
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    if (isWayland) {
+      // Portal prompts the user; getSources returns just the chosen source.
+      const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+      if (sources.length === 0) {
+        callback({});
+        return;
+      }
+      callback({ video: sources[0]! });
+      return;
+    }
+
+    // Everywhere else (X11, macOS, Windows): show our in-app picker
     const sourceId = await openScreenPicker();
     if (!sourceId) {
       callback({});
