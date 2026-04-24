@@ -36,9 +36,11 @@ jobs:
       - name: Build shared types
         run: pnpm --filter @redvoice/shared build
 
-      - name: Build server (needed because client depends on workspace types)
+      - name: Generate Prisma client (server typecheck dep)
+        run: pnpm --filter @redvoice/server exec prisma generate
+
+      - name: Build server
         run: pnpm --filter @redvoice/server build
-        continue-on-error: true
 
       - name: Build client
         run: pnpm --filter @redvoice/client run build
