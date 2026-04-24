@@ -121,6 +121,14 @@ function findScreenTrack(p: LocalParticipant | RemoteParticipant): Track | null 
   return null;
 }
 
+function hasScreenShare(p: LocalParticipant | null): boolean {
+  if (!p) return false;
+  for (const pub of p.trackPublications.values()) {
+    if (pub.source === Track.Source.ScreenShare) return true;
+  }
+  return false;
+}
+
 export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const token = useAuthStore((s) => s.token);
   const serverUrl = useAuthStore((s) => s.serverUrl);
@@ -200,6 +208,16 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     props.onLeave();
   }
 
+  async function handleToggleMute(): Promise<void> {
+    const currentlyMuted = !(snapshot.local?.isMicrophoneEnabled ?? true);
+    await roomWrapper.setMuted(!currentlyMuted);
+  }
+
+  async function handleToggleScreen(): Promise<void> {
+    const sharing = hasScreenShare(snapshot.local);
+    await roomWrapper.setScreenShare(!sharing);
+  }
+
   const tiles: ParticipantView[] = [];
   if (snapshot.local) {
     tiles.push({
@@ -220,20 +238,18 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     });
   }
 
+  const muted = !(snapshot.local?.isMicrophoneEnabled ?? true);
+  const sharing = hasScreenShare(snapshot.local);
+
   return (
     <div className="app">
       <div className="topbar">
         <strong>RedVoice — In room</strong>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ color: "var(--text-dim)" }}>
-            {conn.phase === "connecting" && "Connecting…"}
-            {conn.phase === "connected" && `${tiles.length} participant(s)`}
-            {conn.phase === "error" && `Error: ${conn.message}`}
-          </span>
-          <button className="btn secondary" onClick={() => void handleLeave()}>
-            Leave
-          </button>
-        </div>
+        <span style={{ color: "var(--text-dim)" }}>
+          {conn.phase === "connecting" && "Connecting…"}
+          {conn.phase === "connected" && `${tiles.length} participant(s)`}
+          {conn.phase === "error" && `Error: ${conn.message}`}
+        </span>
       </div>
 
       <div style={{ padding: 24, flex: 1, overflow: "auto" }}>
@@ -249,6 +265,36 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             <ParticipantTile key={p.id} p={p} />
           ))}
         </div>
+      </div>
+
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          background: "var(--bg-elev)",
+          padding: 12,
+          display: "flex",
+          gap: 8,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <button
+          className={`btn ${muted ? "" : "secondary"}`}
+          onClick={() => void handleToggleMute()}
+          disabled={conn.phase !== "connected"}
+        >
+          {muted ? "Unmute" : "Mute"}
+        </button>
+        <button
+          className={`btn ${sharing ? "" : "secondary"}`}
+          onClick={() => void handleToggleScreen()}
+          disabled={conn.phase !== "connected"}
+        >
+          {sharing ? "Stop sharing" : "Share screen"}
+        </button>
+        <button className="btn secondary" onClick={() => void handleLeave()}>
+          Leave
+        </button>
       </div>
 
       <div ref={audioMountRef} style={{ display: "none" }} aria-hidden="true" />
