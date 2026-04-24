@@ -47,7 +47,8 @@ Explicitly out of scope for the initial Bare MVP. These may be added later but m
 3. Create a room (owner = creator)
 4. See "My Rooms" and "Recent Rooms" on a home screen
 5. Join a room by pasting a room link (`voice.R3dWolfie.com/join/<room-id>`) into the app's "Join by link" field, or by clicking one from the home list. (OS-level deep-link handling — clicking the URL in a browser and having it open the app — is explicitly deferred to post-MVP. The URL format is forward-compatible with adding a handler later.)
-6. Inside a room:
+6. Pre-join check before entering the room: confirm mic device, speaker device, screenshare source (or "no share"). Live mic-level meter shown so the user sees their mic is working. "Join now" button to proceed; "Cancel" returns to home. This is a hard requirement — skipping it is the top cause of "why can't anyone hear me?" support issues in voice apps.
+7. Inside a room:
    - Pick a screen/window to share (or none), via LiveKit's `getDisplayMedia`
    - Mic is always on by default using voice-activity detection
    - Toggle to push-to-talk mode, with a configurable global hotkey
@@ -55,7 +56,7 @@ Explicitly out of scope for the initial Bare MVP. These may be added later but m
    - Stop/start screenshare
    - See a grid of participant tiles: own tile on top-left, each tile shows that user's screenshare or avatar, a ring around the tile pulses when they're talking
    - Leave button
-7. Settings modal: mic/speaker device pickers, mic-mode toggle, PTT hotkey capture, preferred screencap resolution, log out
+8. Settings modal: mic/speaker device pickers, mic-mode toggle, PTT hotkey capture, preferred screencap resolution, log out
 
 ## Architecture
 
@@ -170,8 +171,9 @@ No delete-room in MVP. No update-room in MVP.
 
 1. **Login / Register** — toggle between modes. Fields: server URL (defaults to `voice.R3dWolfie.com`, editable for self-hosters), email, password, display name (register only).
 2. **Home / Lobby** — two-column: left is "My Rooms" + "Recent Rooms" list, right is a big "Create Room" button and a "Join by link" input.
-3. **In-Room** — grid of participant tiles; bottom control bar with mute / share / mic-mode / leave.
-4. **Settings** — modal. Mic device, speaker device, mic mode (VAD / PTT), PTT hotkey capture, preferred screencap resolution, log out button.
+3. **Pre-Join Check** — after clicking join on a room, before entering it. Shows: mic device picker with live VU-meter, speaker device picker with a "test sound" button, screenshare source picker (screen / window / none) with a small preview thumbnail. "Join now" proceeds; "Cancel" returns to Lobby. This screen is required in MVP — it prevents the most common voice-app UX failure ("nobody can hear me").
+4. **In-Room** — grid of participant tiles; bottom control bar with mute / share / mic-mode / leave.
+5. **Settings** — modal. Mic device, speaker device, mic mode (VAD / PTT), PTT hotkey capture, preferred screencap resolution, log out button.
 
 Implementation will invoke the `frontend-design` skill to produce a distinctive, Discord-inspired dark theme rather than a generic AI-default aesthetic.
 
