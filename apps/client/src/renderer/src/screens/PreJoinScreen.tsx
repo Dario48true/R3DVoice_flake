@@ -1,5 +1,11 @@
-import { useEffect, useState, type ReactElement } from "react";
-import { listAudioInputs, listAudioOutputs, openMicStream, type DeviceInfo } from "../lib/media.js";
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import {
+  listAudioInputs,
+  listAudioOutputs,
+  openMicStream,
+  subscribeMicLevel,
+  type DeviceInfo,
+} from "../lib/media.js";
 
 export interface PreJoinSelection {
   micDeviceId: string | null;
@@ -20,14 +26,17 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   const [speakerDeviceId, setSpeakerDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [level, setLevel] = useState(0);
 
-  // On mount: request mic permission (unlocks device labels) then enumerate.
+  // Ref holds the currently-open warmup stream so we can stop it on cleanup.
+  const warmStreamRef = useRef<MediaStream | null>(null);
+
+  // On mount: request mic permission once (unlocks device labels) then enumerate.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const stream = await openMicStream(undefined);
-        // Immediately stop the warm-up stream — we'll re-open with the chosen device later.
         stream.getTracks().forEach((t) => t.stop());
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "mic permission denied");
@@ -43,6 +52,38 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
       cancelled = true;
     };
   }, []);
+
+  // Whenever micDeviceId changes: open stream, subscribe to level.
+  useEffect(() => {
+    if (!micDeviceId) {
+      setLevel(0);
+      return;
+    }
+    let unsubscribe: (() => void) | null = null;
+    let stream: MediaStream | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        stream = await openMicStream(micDeviceId);
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        warmStreamRef.current = stream;
+        unsubscribe = subscribeMicLevel(stream, (lvl) => {
+          if (!cancelled) setLevel(lvl);
+        });
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "failed to open mic");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      warmStreamRef.current = null;
+    };
+  }, [micDeviceId]);
 
   function handleJoin(): void {
     setBusy(true);
@@ -66,6 +107,25 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
               <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
             ))}
           </select>
+          <div
+            aria-label="mic level"
+            style={{
+              marginTop: 6,
+              height: 6,
+              background: "var(--border)",
+              borderRadius: 3,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round(level * 100)}%`,
+                height: "100%",
+                background: "var(--accent)",
+                transition: "width 60ms linear",
+              }}
+            />
+          </div>
         </label>
 
         <label>
