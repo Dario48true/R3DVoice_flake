@@ -31,12 +31,16 @@ export class LiveKitRoom {
   private listeners = new Set<RoomStateListener>();
   private connected = false;
   private err: string | null = null;
+  // Cached snapshot — useSyncExternalStore compares by reference, so this must
+  // stay stable between LiveKit events or React will loop forever.
+  private cachedSnapshot: RoomStateSnapshot;
 
   constructor() {
     this.room = new Room({
       adaptiveStream: true,
       dynacast: true,
     });
+    this.cachedSnapshot = this.computeSnapshot();
 
     this.room.on(RoomEvent.Connected, () => {
       this.connected = true;
@@ -59,13 +63,16 @@ export class LiveKitRoom {
 
   subscribe(listener: RoomStateListener): () => void {
     this.listeners.add(listener);
-    listener(this.snapshot());
     return () => {
       this.listeners.delete(listener);
     };
   }
 
   snapshot(): RoomStateSnapshot {
+    return this.cachedSnapshot;
+  }
+
+  private computeSnapshot(): RoomStateSnapshot {
     return {
       connected: this.connected,
       local: this.room.localParticipant,
@@ -75,8 +82,8 @@ export class LiveKitRoom {
   }
 
   private emit(): void {
-    const s = this.snapshot();
-    for (const l of this.listeners) l(s);
+    this.cachedSnapshot = this.computeSnapshot();
+    for (const l of this.listeners) l(this.cachedSnapshot);
   }
 
   async join(options: JoinOptions): Promise<void> {
