@@ -17,6 +17,17 @@ export interface RoomStateSnapshot {
 
 export type RoomStateListener = (state: RoomStateSnapshot) => void;
 
+export interface ScreenShareQuality {
+  /** Video resolution width (e.g. 1280, 1920). */
+  width: number;
+  /** Video resolution height (e.g. 720, 1080). */
+  height: number;
+  /** Frames per second (30 or 60). */
+  frameRate: number;
+  /** If true, also capture system audio alongside the screen video. */
+  audio: boolean;
+}
+
 export interface JoinOptions {
   wsUrl: string;
   token: string;
@@ -26,6 +37,8 @@ export interface JoinOptions {
   publishAudio?: boolean;
   /** If true, ask LiveKit to also acquire a screenshare track on connect. */
   publishScreen?: boolean;
+  /** Quality settings for the screenshare publish. Used when publishScreen is true. */
+  screenQuality?: ScreenShareQuality;
 }
 
 export class LiveKitRoom {
@@ -114,7 +127,17 @@ export class LiveKitRoom {
     }
     // Publish screenshare
     if (options.publishScreen) {
-      await this.room.localParticipant.setScreenShareEnabled(true);
+      const q = options.screenQuality;
+      if (q) {
+        await this.room.localParticipant.setScreenShareEnabled(true, {
+          resolution: { width: q.width, height: q.height, frameRate: q.frameRate },
+          audio: q.audio,
+          systemAudio: q.audio ? "include" : "exclude",
+          contentHint: "motion",
+        });
+      } else {
+        await this.room.localParticipant.setScreenShareEnabled(true);
+      }
     }
   }
 

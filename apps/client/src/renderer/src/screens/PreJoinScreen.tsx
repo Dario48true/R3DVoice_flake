@@ -7,11 +7,25 @@ import {
   type DeviceInfo,
 } from "../lib/media.js";
 
+export interface ScreenQuality {
+  width: number;
+  height: number;
+  frameRate: number;
+  audio: boolean;
+}
+
 export interface PreJoinSelection {
   micDeviceId: string | null;
   speakerDeviceId: string | null;
   publishScreen: boolean;
+  screenQuality: ScreenQuality;
 }
+
+const RESOLUTIONS: Record<string, { width: number; height: number }> = {
+  "720p": { width: 1280, height: 720 },
+  "1080p": { width: 1920, height: 1080 },
+  "1440p": { width: 2560, height: 1440 },
+};
 
 export interface PreJoinScreenProps {
   roomId: string;
@@ -25,6 +39,9 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
   const [speakerDeviceId, setSpeakerDeviceId] = useState<string | null>(null);
   const [publishScreen, setPublishScreen] = useState(false);
+  const [resolution, setResolution] = useState<keyof typeof RESOLUTIONS>("1080p");
+  const [frameRate, setFrameRate] = useState<30 | 60>(30);
+  const [shareAudio, setShareAudio] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [level, setLevel] = useState(0);
@@ -85,7 +102,18 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
 
   function handleJoin(): void {
     setBusy(true);
-    props.onJoin({ micDeviceId, speakerDeviceId, publishScreen });
+    const res = RESOLUTIONS[resolution]!;
+    props.onJoin({
+      micDeviceId,
+      speakerDeviceId,
+      publishScreen,
+      screenQuality: {
+        width: res.width,
+        height: res.height,
+        frameRate,
+        audio: shareAudio,
+      },
+    });
   }
 
   return (
@@ -147,6 +175,47 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
           />
           <span>Share a screen (you'll pick the window/monitor on join)</span>
         </label>
+
+        {publishScreen && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+              paddingLeft: 24,
+            }}
+          >
+            <label>
+              <div className="section-title">Resolution</div>
+              <select
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value as keyof typeof RESOLUTIONS)}
+              >
+                {Object.keys(RESOLUTIONS).map((key) => (
+                  <option key={key} value={key}>{key}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <div className="section-title">Frame rate</div>
+              <select
+                value={frameRate}
+                onChange={(e) => setFrameRate(Number(e.target.value) as 30 | 60)}
+              >
+                <option value={30}>30 fps</option>
+                <option value={60}>60 fps</option>
+              </select>
+            </label>
+            <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={shareAudio}
+                onChange={(e) => setShareAudio(e.target.checked)}
+              />
+              <span>Include system audio</span>
+            </label>
+          </div>
+        )}
 
         {error && <div className="error">{error}</div>}
 

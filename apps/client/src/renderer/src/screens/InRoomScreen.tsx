@@ -9,7 +9,6 @@ import {
   type RemoteParticipant,
   type RoomStateSnapshot,
 } from "../lib/livekit-room.js";
-import { openMicStream } from "../lib/media.js";
 import type { PreJoinSelection } from "./PreJoinScreen.js";
 
 export interface InRoomScreenProps {
@@ -153,15 +152,13 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         const { token: lkToken, url } = await api.mintLiveKitToken(props.roomId);
         if (cancelled) return;
 
-        const micStream = props.selection.micDeviceId
-          ? await openMicStream(props.selection.micDeviceId)
-          : undefined;
-
+        // Mic is not published in Plan 3 (voice deferred to Plan 4 pending
+        // codec-collision investigation). Skip opening the stream entirely.
         await roomWrapper.join({
           wsUrl: url,
           token: lkToken,
-          ...(micStream !== undefined && { micStream }),
           publishScreen: props.selection.publishScreen,
+          screenQuality: props.selection.screenQuality,
         });
         if (!cancelled) setConn({ phase: "connected" });
       } catch (err) {

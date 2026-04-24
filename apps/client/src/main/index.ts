@@ -55,7 +55,14 @@ app.whenReady().then(async () => {
         callback({});
         return;
       }
-      callback({ video: sources[0]! });
+      // On Windows, "loopback" captures system audio with the screenshare.
+      // On macOS/Linux this value is rejected — omit audio there and rely on
+      // the OS portal (Linux PipeWire handles audio via the system picker).
+      if (process.platform === "win32") {
+        callback({ video: sources[0]!, audio: "loopback" });
+      } else {
+        callback({ video: sources[0]! });
+      }
     } catch (err) {
       console.error("desktopCapturer.getSources failed:", err);
       callback({});
