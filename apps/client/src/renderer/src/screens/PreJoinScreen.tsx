@@ -24,14 +24,13 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   const [speakers, setSpeakers] = useState<DeviceInfo[]>([]);
   const [micDeviceId, setMicDeviceId] = useState<string | null>(null);
   const [speakerDeviceId, setSpeakerDeviceId] = useState<string | null>(null);
+  const [publishScreen, setPublishScreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [level, setLevel] = useState(0);
 
-  // Ref holds the currently-open warmup stream so we can stop it on cleanup.
   const warmStreamRef = useRef<MediaStream | null>(null);
 
-  // On mount: request mic permission once (unlocks device labels) then enumerate.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -53,7 +52,6 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
     };
   }, []);
 
-  // Whenever micDeviceId changes: open stream, subscribe to level.
   useEffect(() => {
     if (!micDeviceId) {
       setLevel(0);
@@ -87,7 +85,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
 
   function handleJoin(): void {
     setBusy(true);
-    props.onJoin({ micDeviceId, speakerDeviceId, publishScreen: false });
+    props.onJoin({ micDeviceId, speakerDeviceId, publishScreen });
   }
 
   return (
@@ -139,6 +137,15 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
               <option key={s.deviceId} value={s.deviceId}>{s.label}</option>
             ))}
           </select>
+        </label>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={publishScreen}
+            onChange={(e) => setPublishScreen(e.target.checked)}
+          />
+          <span>Share a screen (you'll pick the window/monitor on join)</span>
         </label>
 
         {error && <div className="error">{error}</div>}
