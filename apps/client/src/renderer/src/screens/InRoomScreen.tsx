@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactElement } from "react";
 import { ApiClient } from "../lib/api.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import {
@@ -30,7 +30,20 @@ interface ParticipantView {
   screenTrack: Track | null;
 }
 
-function ParticipantTile({ p }: { p: ParticipantView }): ReactElement {
+interface TileCallbacks {
+  onDoubleClick(id: string): void;
+  onContextMenu(id: string, x: number, y: number): void;
+}
+
+function ParticipantTile({
+  p,
+  maximized,
+  callbacks,
+}: {
+  p: ParticipantView;
+  maximized: boolean;
+  callbacks: TileCallbacks;
+}): ReactElement {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -43,14 +56,23 @@ function ParticipantTile({ p }: { p: ParticipantView }): ReactElement {
     };
   }, [p.screenTrack]);
 
+  function onContextMenu(e: MouseEvent): void {
+    if (p.isLocal) return;
+    e.preventDefault();
+    callbacks.onContextMenu(p.id, e.clientX, e.clientY);
+  }
+
   return (
     <div
+      onDoubleClick={() => callbacks.onDoubleClick(p.id)}
+      onContextMenu={onContextMenu}
       style={{
         background: "var(--bg-elev)",
         border: `2px solid ${p.isSpeaking ? "var(--accent)" : "var(--border)"}`,
         borderRadius: 8,
         padding: p.screenTrack ? 0 : 16,
-        minHeight: 180,
+        minHeight: maximized ? 0 : 180,
+        height: maximized ? "100%" : undefined,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -59,7 +81,9 @@ function ParticipantTile({ p }: { p: ParticipantView }): ReactElement {
         transition: "border-color 120ms linear",
         overflow: "hidden",
         position: "relative",
+        cursor: "pointer",
       }}
+      title="Double-click to maximize · right-click for volume"
     >
       {p.screenTrack ? (
         <>
@@ -128,12 +152,21 @@ function hasScreenShare(p: LocalParticipant | null): boolean {
   return false;
 }
 
+interface VolumeMenu {
+  participantId: string;
+  x: number;
+  y: number;
+}
+
 export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const token = useAuthStore((s) => s.token);
   const serverUrl = useAuthStore((s) => s.serverUrl);
 
   const roomWrapper = useMemo(() => new LiveKitRoom(), []);
   const [conn, setConn] = useState<ConnectionState>({ phase: "connecting" });
+  const [maximizedId, setMaximizedId] = useState<string | null>(null);
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const [menu, setMenu] = useState<VolumeMenu | null>(null);
 
   const snapshot: RoomStateSnapshot = useSyncExternalStore(
     (cb) => roomWrapper.subscribe(() => cb()),
@@ -151,9 +184,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         api.setToken(token);
         const { token: lkToken, url } = await api.mintLiveKitToken(props.roomId);
         if (cancelled) return;
-
-        // Mic is not published in Plan 3 (voice deferred to Plan 4 pending
-        // codec-collision investigation). Skip opening the stream entirely.
         await roomWrapper.join({
           wsUrl: url,
           token: lkToken,
@@ -200,20 +230,51 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     };
   }, [roomWrapper]);
 
+  // ESC closes maximize / menu; click-outside closes menu.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") {
+        setMaximizedId(null);
+        setMenu(null);
+      }
+    }
+    function onClick(): void {
+      setMenu(null);
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("click", onClick);
+    };
+  }, []);
+
   async function handleLeave(): Promise<void> {
     await roomWrapper.leave();
     props.onLeave();
   }
 
-  async function handleToggleMute(): Promise<void> {
-    const currentlyMuted = !(snapshot.local?.isMicrophoneEnabled ?? true);
-    await roomWrapper.setMuted(!currentlyMuted);
+  async function handleToggleScreen(): Promise<void> {
+    const isSharing = hasScreenShare(snapshot.local);
+    await roomWrapper.setScreenShare(!isSharing);
   }
 
-  async function handleToggleScreen(): Promise<void> {
-    const sharing = hasScreenShare(snapshot.local);
-    await roomWrapper.setScreenShare(!sharing);
+  function setParticipantVolume(id: string, volume: number): void {
+    setVolumes((prev) => ({ ...prev, [id]: volume }));
+    const participant = snapshot.remotes.find((r) => r.identity === id);
+    if (participant) {
+      participant.setVolume(volume);
+    }
   }
+
+  const tileCallbacks: TileCallbacks = {
+    onDoubleClick: (id) => {
+      setMaximizedId((current) => (current === id ? null : id));
+    },
+    onContextMenu: (id, x, y) => {
+      setMenu({ participantId: id, x, y });
+    },
+  };
 
   const tiles: ParticipantView[] = [];
   if (snapshot.local) {
@@ -235,8 +296,11 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     });
   }
 
-  const muted = !(snapshot.local?.isMicrophoneEnabled ?? true);
   const sharing = hasScreenShare(snapshot.local);
+  const maximizedTile = maximizedId ? tiles.find((t) => t.id === maximizedId) : null;
+  const menuParticipantName = menu
+    ? (tiles.find((t) => t.id === menu.participantId)?.name ?? "participant")
+    : "";
 
   return (
     <div className="app">
@@ -249,19 +313,28 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         </span>
       </div>
 
-      <div style={{ padding: 24, flex: 1, overflow: "auto" }}>
+      <div style={{ padding: 24, flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {conn.phase === "error" && <div className="error">{conn.message}</div>}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {tiles.map((p) => (
-            <ParticipantTile key={p.id} p={p} />
-          ))}
-        </div>
+        {maximizedTile ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+            <ParticipantTile p={maximizedTile} maximized callbacks={tileCallbacks} />
+            <div style={{ color: "var(--text-dim)", marginTop: 8, fontSize: 12 }}>
+              Double-click again or press ESC to exit fullscreen
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {tiles.map((p) => (
+              <ParticipantTile key={p.id} p={p} maximized={false} callbacks={tileCallbacks} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div
@@ -276,13 +349,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         }}
       >
         <button
-          className={`btn ${muted ? "" : "secondary"}`}
-          onClick={() => void handleToggleMute()}
-          disabled={conn.phase !== "connected"}
-        >
-          {muted ? "Unmute" : "Mute"}
-        </button>
-        <button
           className={`btn ${sharing ? "" : "secondary"}`}
           onClick={() => void handleToggleScreen()}
           disabled={conn.phase !== "connected"}
@@ -293,6 +359,40 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           Leave
         </button>
       </div>
+
+      {menu && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            left: menu.x,
+            top: menu.y,
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: 12,
+            minWidth: 220,
+            zIndex: 1000,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
+            Volume — {menuParticipantName}
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={2}
+            step={0.05}
+            value={volumes[menu.participantId] ?? 1}
+            onChange={(e) => setParticipantVolume(menu.participantId, Number(e.target.value))}
+            style={{ width: "100%" }}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+            {Math.round((volumes[menu.participantId] ?? 1) * 100)}%
+          </div>
+        </div>
+      )}
 
       <div ref={audioMountRef} style={{ display: "none" }} aria-hidden="true" />
     </div>
