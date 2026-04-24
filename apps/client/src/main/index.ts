@@ -5,6 +5,12 @@ import { saveToken, getToken, clearToken } from "./token-store.js";
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
 
+// Dev/test escape hatch: run a second instance with an isolated session.
+// REDVOICE_USER_DATA_DIR=/tmp/redvoice-b pnpm --filter @redvoice/client dev
+if (process.env["REDVOICE_USER_DATA_DIR"]) {
+  app.setPath("userData", process.env["REDVOICE_USER_DATA_DIR"]);
+}
+
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1200,
