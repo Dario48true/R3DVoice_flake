@@ -622,21 +622,85 @@ The skill typically produces multiple commits. Let it.
 
 ---
 
-## Task 11: Cloudflare + UDP deployment docs
+## Task 11: Self-host deployment guide (Cloudflare + UDP + systemd)
 
 **Files:**
 - Create: `docs/deployment.md`
 - Create: `apps/server/.env.production.example`
-- Modify: `README.md` (link to deployment.md)
+- Create: `infra/systemd/redvoice-server.service`
+- Create: `infra/systemd/redvoice-livekit.service`
+- Modify: `README.md` (link to deployment.md + "Self-host" top section)
 
 Content sketch for `deployment.md`:
-- Prerequisites: domain, Cloudflare account, box to run it on
-- Cloudflare tunnel setup (using `cloudflared` CLI) routing voice.example.com → local app-server
-- Router port-forward for UDP 7881 → box's LAN IP
-- DNS A record for media.example.com → home WAN IP (direct UDP path)
-- Generate production `JWT_SECRET` + `LIVEKIT_API_SECRET` with `openssl rand -base64 32`
-- `docker compose up -d` with production livekit.yaml (different from dev)
-- Firewall opens for UDP 7881 + TCP 7882
+
+**Prerequisites section:**
+- Domain (e.g. voice.yourhandle.com)
+- Cloudflare account (free tier)
+- A Linux box (tested on Bazzite/Fedora; Debian/Ubuntu should work)
+- Router access to port-forward UDP
+
+**Ports table** (reuse the one from chat):
+| Port | Protocol | Purpose | Exposure |
+|---|---|---|---|
+| 443 | TCP/HTTPS | App API + LiveKit signalling | Via Cloudflare tunnel (no router change) |
+| **7881** | **UDP** | **LiveKit media** | **Router port-forward required** |
+| 50000-50020 | UDP | LiveKit ICE range | Same range port-forward |
+| 7882 | TCP | Media fallback | Optional via Cloudflare |
+
+**Step-by-step:**
+1. Install Docker + pnpm + Node ≥20
+2. Clone repo, `pnpm install`, `pnpm prisma migrate deploy`
+3. Fill `apps/server/.env` with generated secrets (`openssl rand -base64 32` × 2)
+4. Fill `infra/livekit.yaml` with the same `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`
+5. Install `cloudflared`, `cloudflared tunnel login`, create tunnel, route `voice.yourhandle.com` → `localhost:3000` and `wss://voice.yourhandle.com/rtc` → `localhost:7880`
+6. **Router:** port-forward UDP 7881 + UDP 50000-50020 + (optional) TCP 7882 → your server's LAN IP
+7. Install systemd units (see below) + `systemctl enable --now redvoice-server redvoice-livekit`
+8. Confirm: `curl https://voice.yourhandle.com/health` → `{"status":"ok"}`
+
+**Systemd units** — install to `/etc/systemd/system/` then enable:
+
+`infra/systemd/redvoice-server.service`:
+```ini
+[Unit]
+Description=RedVoice app server (Node/Fastify)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=red
+WorkingDirectory=/home/red/RedVoice
+EnvironmentFile=/home/red/RedVoice/apps/server/.env
+ExecStart=/usr/bin/pnpm --filter @redvoice/server start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`infra/systemd/redvoice-livekit.service`:
+```ini
+[Unit]
+Description=RedVoice LiveKit media server (Docker)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/red/RedVoice/infra
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Note: the paths above assume `/home/red/RedVoice/` — adjust for your install location. The server unit loads its env from `apps/server/.env` which must NOT be world-readable (`chmod 600`).
+
+**`apps/server/.env.production.example`** — same keys as dev `.env.example` but with comments pointing to the deployment guide for generation commands.
 
 Commit:
 ```bash
@@ -825,7 +889,61 @@ git commit -m "feat(client): advanced mic options (gain, AGC, noise gate) in Set
 
 ---
 
-## Task 15: Final checks, tag release, verify CI
+## Task 15: Email verification
+
+**Files:**
+- Modify: `apps/server/prisma/schema.prisma` (add `emailVerifiedAt` + `EmailVerificationToken` table)
+- Create: `apps/server/src/auth/email.ts` (SMTP wrapper — use nodemailer)
+- Create: `apps/server/src/auth/verify-routes.ts` (`/auth/verify-email/:token` + resend endpoint)
+- Modify: `apps/server/src/auth/routes.ts` (send verification email on register)
+- Modify: `apps/server/src/config.ts` (SMTP env vars + `REQUIRE_EMAIL_VERIFIED` flag)
+- Modify: `apps/server/.env.example` (SMTP placeholders)
+- Modify: `apps/client/src/renderer/src/screens/LoginScreen.tsx` (show "check your inbox" notice)
+
+**Context:** Free SMTP options for self-hosters: Resend (3k/month free), Mailgun (100/day trial), or self-hosted Postfix. Default config points at Resend. When `REQUIRE_EMAIL_VERIFIED=true` (opt-in), unverified users can't join rooms — they still log in but see a "verify your email" modal until they click the link.
+
+Tokens: 32-byte crypto-random, expire in 24h, one-time use.
+
+Commit: `feat(server): email verification via SMTP with 24h tokens`
+
+---
+
+## Task 16: Password reset
+
+**Files:**
+- Modify: `apps/server/prisma/schema.prisma` (add `PasswordResetToken` table)
+- Create: `apps/server/src/auth/reset-routes.ts` (`/auth/forgot-password` + `/auth/reset-password/:token`)
+- Reuses Task 15's `email.ts` module
+- Create: `apps/client/src/renderer/src/screens/ForgotPasswordScreen.tsx`
+- Modify: `apps/client/src/renderer/src/screens/LoginScreen.tsx` (add "Forgot password?" link)
+
+**Context:** Standard flow. `/forgot-password` takes an email, always returns 200 (no enumeration), emails a reset link if the email exists. Link has a single-use token valid 1h. Clicking the link opens `redvoice://reset-password/<token>` in the app (reuses Plan 5 Task 4's deep-link infrastructure) OR opens a web page (when Plan 7's web client exists). For now: require the app.
+
+Commit: `feat(server): password reset flow`
+
+---
+
+## Task 17: Two-factor auth (TOTP)
+
+**Files:**
+- Modify: `apps/client/package.json` (add `qrcode` to client for displaying QR)
+- Modify: `apps/server/package.json` (add `otplib`)
+- Modify: `apps/server/prisma/schema.prisma` (add `totpSecret` and `totpEnabled` to User)
+- Create: `apps/server/src/auth/totp-routes.ts` (`/auth/totp/setup`, `/auth/totp/verify`, `/auth/totp/disable`)
+- Modify: `apps/server/src/auth/routes.ts` (login flow: if `totpEnabled`, login returns 202 with `requires_totp: true` instead of issuing JWT; client then POSTs code to `/auth/totp/verify-login`)
+- Create: `apps/client/src/renderer/src/screens/TotpSetupScreen.tsx` (QR code + enter-code flow)
+- Modify: `apps/client/src/renderer/src/components/SettingsModal.tsx` (new Security section in About tab or dedicated tab)
+- Modify: `apps/client/src/renderer/src/screens/LoginScreen.tsx` (6-digit code prompt when login returns 202)
+
+**Context:** Standard TOTP. `otplib` generates a secret + QR URL. User scans with Authenticator/Authy/1Password, types code to confirm. Store secret encrypted at rest (argon2 isn't right here — use a server-side encryption key). For MVP, store in plaintext but note the risk (users won't enable 2FA in dev anyway). Plan 5.5 can encrypt properly.
+
+Login flow change: if user has TOTP enabled, login returns `{ requires_totp: true, pending_token: <nonce> }` instead of a session JWT. Client prompts for code, POSTs to `/auth/totp/verify-login` with nonce + code → gets session JWT.
+
+Commit: `feat(server): 2FA (TOTP) with otplib`
+
+---
+
+## Task 18: Final checks, tag release, verify CI
 
 - [ ] **Step 1: Full workspace checks**
 

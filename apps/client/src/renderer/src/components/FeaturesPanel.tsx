@@ -108,10 +108,13 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
             <Item icon="🔜">Distinctive dark UI polish</Item>
             <Item icon="🔜">Opt-in crash reporting</Item>
             <Item icon="🔜">macOS screen-recording permission onboarding</Item>
-            <Item icon="🔜">Cloudflare tunnel + UDP deployment docs</Item>
+            <Item icon="🔜">Self-host deployment guide + systemd auto-start</Item>
             <Item icon="🔜">Webcam alongside screenshare</Item>
             <Item icon="🔜">Noise suppression (Off / Low / High)</Item>
             <Item icon="🔜">Advanced mic options (gain, AGC, noise gate)</Item>
+            <Item icon="🔜">Email verification</Item>
+            <Item icon="🔜">Password reset</Item>
+            <Item icon="🔜">Two-factor auth (TOTP authenticator app)</Item>
           </Group>
 
           <Group title="Not planned" color="var(--text-dim)">
@@ -122,7 +125,8 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
           </Group>
 
           <Group title="Future — after desktop is solid" color="#555">
-            <Item icon="🌅">Mobile clients — iOS &amp; Android (voice + viewing only; won't start until Plan 5 ships + voice is stable in the wild)</Item>
+            <Item icon="🌅">Web client at voice.r3dwolfie.com (Plan 7 — browser-based, same rooms)</Item>
+            <Item icon="🌅">Mobile clients — iOS &amp; Android (Plan 6 — voice + viewing only; no screenshare from mobile)</Item>
           </Group>
         </div>
       </div>
