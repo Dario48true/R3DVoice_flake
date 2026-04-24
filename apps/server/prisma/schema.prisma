@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  displayName  String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  sessions      Session[]
+  ownedRooms    Room[]           @relation("RoomOwner")
+  memberships   RoomMembership[]
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Room {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  owner       User             @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  memberships RoomMembership[]
+
+  @@index([ownerId])
+}
+
+model RoomMembership {
+  userId     String
+  roomId     String
+  lastJoined DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roomId])
+  @@index([roomId])
+}
