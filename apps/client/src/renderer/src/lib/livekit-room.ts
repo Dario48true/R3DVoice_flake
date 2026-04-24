@@ -22,6 +22,8 @@ export interface JoinOptions {
   token: string;
   /** Optional pre-opened MediaStream to publish as mic track. */
   micStream?: MediaStream;
+  /** If false (default), do not publish mic audio at all. Set true to publish. */
+  publishAudio?: boolean;
   /** If true, ask LiveKit to also acquire a screenshare track on connect. */
   publishScreen?: boolean;
 }
@@ -36,9 +38,12 @@ export class LiveKitRoom {
   private cachedSnapshot: RoomStateSnapshot;
 
   constructor() {
+    // dynacast disabled — it changes simulcast layer counts at runtime and
+    // has been the source of "BUNDLE codec collision PT=111" failures with
+    // some server versions. adaptiveStream is fine (purely receive-side).
     this.room = new Room({
       adaptiveStream: true,
-      dynacast: true,
+      dynacast: false,
     });
     this.cachedSnapshot = this.computeSnapshot();
 
@@ -95,14 +100,17 @@ export class LiveKitRoom {
       this.emit();
       throw err;
     }
-    // Publish mic
-    if (options.micStream) {
-      const [micTrack] = options.micStream.getAudioTracks();
-      if (micTrack) {
-        await this.room.localParticipant.publishTrack(micTrack, { source: Track.Source.Microphone });
+    // Publish mic only if explicitly requested (voice deferred to Plan 4
+    // pending codec-collision investigation with livekit-client 2.x).
+    if (options.publishAudio) {
+      if (options.micStream) {
+        const [micTrack] = options.micStream.getAudioTracks();
+        if (micTrack) {
+          await this.room.localParticipant.publishTrack(micTrack, { source: Track.Source.Microphone });
+        }
+      } else {
+        await this.room.localParticipant.setMicrophoneEnabled(true);
       }
-    } else {
-      await this.room.localParticipant.setMicrophoneEnabled(true);
     }
     // Publish screenshare
     if (options.publishScreen) {
