@@ -5,6 +5,7 @@ import { saveToken, getToken, clearToken } from "./token-store.js";
 import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.js";
 import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 import { initAutoUpdate } from "./auto-update.js";
+import { writeDesktopEntry } from "./desktop-integration.js";
 
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
@@ -85,6 +86,7 @@ function registerIpcHandlers(): void {
 app.whenReady().then(async () => {
   registerIpcHandlers();
   registerScreenPickerHandlers();
+  writeDesktopEntry();
   initAutoUpdate();
 
   // On Wayland, xdg-desktop-portal is the picker — the OS won't let any app
