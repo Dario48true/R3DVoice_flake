@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, typ
 import { ApiClient } from "../lib/api.js";
 import { createRoomsStore, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
+import { InRoomScreen } from "./InRoomScreen.js";
 import { PreJoinScreen, type PreJoinSelection } from "./PreJoinScreen.js";
 
 function useRoomsStore<T>(store: ReturnType<typeof createRoomsStore>, selector: (s: RoomsState) => T): T {
@@ -74,25 +75,15 @@ export function LobbyScreen(): ReactElement {
   }
 
   if (phase.kind === "inroom") {
-    // Plan 3 Task 8 replaces this with InRoomScreen.
     return (
-      <div className="centered">
-        <div className="form">
-          <h3>In room {phase.roomId}</h3>
-          <p style={{ color: "var(--text-dim)" }}>
-            Connection wiring (LiveKit) arrives in Task 8.
-          </p>
-          <button
-            className="btn secondary"
-            onClick={() => {
-              store.getState().clearActive();
-              setPhase({ kind: "lobby" });
-            }}
-          >
-            Leave
-          </button>
-        </div>
-      </div>
+      <InRoomScreen
+        roomId={phase.roomId}
+        selection={phase.selection}
+        onLeave={() => {
+          store.getState().clearActive();
+          setPhase({ kind: "lobby" });
+        }}
+      />
     );
   }
 
