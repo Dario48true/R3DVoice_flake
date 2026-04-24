@@ -10,6 +10,7 @@ import {
   type RoomStateSnapshot,
 } from "../lib/livekit-room.js";
 import type { PreJoinSelection } from "./PreJoinScreen.js";
+import { SettingsModal } from "../components/SettingsModal.js";
 
 export interface InRoomScreenProps {
   roomId: string;
@@ -167,6 +168,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<VolumeMenu | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const snapshot: RoomStateSnapshot = useSyncExternalStore(
     (cb) => roomWrapper.subscribe(() => cb()),
@@ -306,10 +308,18 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     <div className="app">
       <div className="topbar">
         <strong>RedVoice — In room</strong>
-        <span style={{ color: "var(--text-dim)" }}>
+        <span style={{ color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
           {conn.phase === "connecting" && "Connecting…"}
           {conn.phase === "connected" && `${tiles.length} participant(s)`}
           {conn.phase === "error" && `Error: ${conn.message}`}
+          <button
+            className="btn secondary"
+            style={{ padding: "4px 8px" }}
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+          >
+            ⚙
+          </button>
         </span>
       </div>
 
@@ -395,6 +405,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       )}
 
       <div ref={audioMountRef} style={{ display: "none" }} aria-hidden="true" />
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

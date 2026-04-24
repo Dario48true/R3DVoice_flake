@@ -3,6 +3,7 @@ import { ApiClient } from "../lib/api.js";
 import { createRoomsStore, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { FeaturesPanel } from "../components/FeaturesPanel.js";
+import { SettingsModal } from "../components/SettingsModal.js";
 import { InRoomScreen } from "./InRoomScreen.js";
 import { PreJoinScreen, type PreJoinSelection } from "./PreJoinScreen.js";
 
@@ -35,6 +36,7 @@ export function LobbyScreen(): ReactElement {
 
   const [phase, setPhase] = useState<Phase>({ kind: "lobby" });
   const [featuresOpen, setFeaturesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     void store.getState().refresh();
@@ -103,6 +105,14 @@ export function LobbyScreen(): ReactElement {
           >
             📋 Changelog
           </button>
+          <button
+            className="btn secondary"
+            style={{ padding: "4px 8px" }}
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+          >
+            ⚙
+          </button>
           <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={() => void logout()}>
             Log out
           </button>
@@ -169,6 +179,7 @@ export function LobbyScreen(): ReactElement {
       </div>
 
       {featuresOpen && <FeaturesPanel onClose={() => setFeaturesOpen(false)} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
