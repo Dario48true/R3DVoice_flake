@@ -2,39 +2,43 @@
 
 Open-source, self-hostable, Discord-style screenshare + voice chat.
 
-**Status:** Plan 2 shipped — app-server + Electron client with auth/lobby. Next: Plan 3 (LiveKit infra + in-room experience).
+**Status:** Plan 3 shipped — media integration working end-to-end (audio + screenshare via LiveKit). Plan 4 next: deployment polish + distinctive UI + installers.
 
 ## Repo Layout (monorepo, pnpm)
 
 - `apps/server` — Node/Fastify HTTP API (accounts, rooms, LiveKit token minting)
 - `apps/client` — Electron + React desktop client (Windows + Linux)
 - `packages/shared` — TypeScript types shared across client + server
+- `infra/` — Docker Compose for the LiveKit media server
 - `docs/superpowers/specs/` — design specs
 - `docs/superpowers/plans/` — implementation plans
 
-Future: `infra/` (Docker Compose for LiveKit + Caddy).
-
-## Local development
+## Local development (three terminals)
 
 ```bash
-# Prerequisites: Node ≥20, pnpm ≥9
+# Prerequisites: Node ≥20, pnpm ≥9, Docker + Docker Compose
+
 pnpm install
 
-# First time: init the SQLite DB
+# Terminal 1: LiveKit media server
+cd infra && docker compose up
+
+# One-time DB init (if you haven't)
 cd apps/server && pnpm prisma migrate dev
 cd ../..
 
-# Create apps/server/.env — see apps/server/.env.example
-
-# Terminal 1: run the app-server
+# Terminal 2: app-server
 pnpm server:dev
 
-# Terminal 2: run the Electron client
+# Terminal 3: Electron client
 pnpm --filter @redvoice/client dev
-
-# Run all tests
-pnpm test
 ```
+
+## Try it with two users
+
+Launch the client twice (each run opens its own window). Register two separate accounts, have both join the same room, talk into your mic — you should hear yourself in the other window.
+
+Screenshare: tick "Share a screen" in the pre-join check, click "Join now", pick a window or monitor in the OS prompt.
 
 ## Environment variables (server)
 
@@ -42,9 +46,9 @@ pnpm test
 |---|---|---|
 | `DATABASE_URL` | Prisma SQLite URL | `file:./dev.db` |
 | `JWT_SECRET` | ≥32-char secret for session JWTs | random 32+ bytes |
-| `LIVEKIT_URL` | Public WebSocket URL of your LiveKit server | `wss://media.example.com` |
-| `LIVEKIT_API_KEY` | LiveKit API key | `APIxxxxxxxx` |
-| `LIVEKIT_API_SECRET` | ≥32-char LiveKit API secret | random 32+ bytes |
+| `LIVEKIT_URL` | WebSocket URL of the LiveKit server | `ws://localhost:7880` |
+| `LIVEKIT_API_KEY` | LiveKit API key (matches `infra/livekit.yaml`) | `devkey-redvoice` |
+| `LIVEKIT_API_SECRET` | ≥32-char LiveKit API secret | `devsecret-redvoice-devsecret-redvoice-32` |
 | `PORT` | HTTP port (optional) | `3000` |
 | `HOST` | Bind address (optional) | `0.0.0.0` |
 
