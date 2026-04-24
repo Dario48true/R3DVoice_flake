@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { registerErrorHandler } from "./errors.js";
 import { authRoutes } from "./auth/routes.js";
@@ -14,6 +15,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     disableRequestLogging: true,
     trustProxy: true,
   });
+
+  // The Electron renderer runs on http://localhost:5173 in dev (Vite) and
+  // from a `file://` origin in production builds. Reflecting any origin is
+  // acceptable for a self-hosted app where authorization is enforced by JWTs.
+  await app.register(cors, { origin: true, credentials: true });
 
   await app.register(rateLimit, { global: false });
 

@@ -11,7 +11,7 @@ async function createWindow(): Promise<void> {
     height: 800,
     backgroundColor: "#101014",
     webPreferences: {
-      preload: join(import.meta.dirname, "../preload/index.js"),
+      preload: join(import.meta.dirname, "../preload/index.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
