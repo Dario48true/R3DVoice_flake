@@ -1,0 +1,694 @@
+# RedVoice Plan 5 — Ship It Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Turn the Plan-4 daily-driver into something you'd actually link from a public GitHub README. Ships: text chat, picture-in-picture, network-quality indicator per tile, distinctive UI polish via the `frontend-design` skill, cross-platform installers built in GitHub Actions, auto-update, deep links, macOS first-run permission onboarding, opt-in crash reporting, and Cloudflare + UDP deployment docs.
+
+**Architecture:** No new services. Additions are client-side features (chat, PiP, quality dots, onboarding modal), distribution infrastructure (electron-builder + Actions workflow), and one doc. Plan 5 doesn't touch the server beyond an `.env.production.example`.
+
+**Tech Stack:** `electron-builder` (installers), `electron-updater` (auto-update), LiveKit `DataChannel` (text chat), LiveKit `RoomEvent.ConnectionQualityChanged` (quality dots), `electron-sentry` or Electron's built-in `crashReporter` (crash reports — opt-in). No new runtime deps for the renderer beyond what's already there.
+
+**Spec reference:** `docs/superpowers/specs/2026-04-24-redvoice-design.md` — "Post-MVP Roadmap" items 1 (web frontend for account mgmt: SKIP, out of scope), 2 (text chat), deployment section.
+
+**Plan 4 dependency:** voice must work in a two-client smoke test. If hypothesis #1 from Plan 4 Task 5 fails, backfill hypothesis #2 (different Opus preset for screenshare audio) before starting Plan 5.
+
+**Explicitly deferred beyond Plan 5 (per user):** server-side recording, noise suppression, spatial audio, mobile clients, advanced mic options (input gain, etc.), code signing.
+
+---
+
+## File Structure
+
+```
+.github/workflows/
+├── ci.yml                              # EXISTS (server tests)
+└── release.yml                         # NEW: tagged-release installer builds
+
+apps/client/
+├── package.json                        # MODIFY: add electron-builder + electron-updater
+├── electron-builder.yml                # NEW: packaging config
+├── build/
+│   ├── icon.png                        # NEW: 512×512 app icon (placeholder ok)
+│   └── entitlements.mac.plist          # NEW: macOS entitlements (screen recording)
+├── src/
+│   ├── main/
+│   │   ├── auto-update.ts              # NEW: electron-updater bootstrap
+│   │   ├── deep-links.ts               # NEW: redvoice:// protocol handler
+│   │   ├── crash-report.ts             # NEW: opt-in crashReporter wiring
+│   │   └── index.ts                    # MODIFY: wire above
+│   ├── shared/
+│   │   └── bridge-types.ts             # MODIFY: deep-link + crash-opt-in IPC
+│   ├── preload/
+│   │   └── index.ts                    # MODIFY: expose above
+│   └── renderer/src/
+│       ├── lib/
+│       │   ├── chat-store.ts           # NEW: room chat state via DataChannel
+│       │   └── prefs-store.ts          # MODIFY: add crashOptIn + hasSeenOnboarding
+│       ├── components/
+│       │   ├── ChatPanel.tsx           # NEW: right-hand chat panel in-room
+│       │   ├── NetworkQualityDot.tsx   # NEW: quality indicator
+│       │   └── OnboardingModal.tsx     # NEW: first-run macOS permission flow
+│       ├── screens/
+│       │   ├── InRoomScreen.tsx        # MODIFY: add quality dots + chat toggle
+│       │   ├── PipWindow.tsx           # NEW: renderer for detached PiP
+│       │   └── (rest unchanged)
+│       └── main.tsx                    # MODIFY: route `?pip=1` → PipWindow
+
+docs/
+└── deployment.md                       # NEW: Cloudflare + UDP + secrets walkthrough
+
+apps/server/
+└── .env.production.example             # NEW: prod secret template
+```
+
+---
+
+## Task 1: electron-builder config + local packaging sanity
+
+**Files:**
+- Modify: `apps/client/package.json`
+- Create: `apps/client/electron-builder.yml`
+- Create: `apps/client/build/icon.png` (placeholder — any 512x512 PNG)
+- Create: `apps/client/build/entitlements.mac.plist`
+
+- [ ] **Step 1: Add devDeps**
+
+In `apps/client/package.json`, add to `devDependencies`:
+
+```json
+    "electron-builder": "^26.0.0",
+    "electron-updater": "^6.3.0",
+```
+
+(Note: `electron-updater` is a runtime dep strictly speaking. It goes in `dependencies`.)
+
+Move `electron-updater` to `dependencies`:
+```json
+  "dependencies": {
+    "@redvoice/shared": "workspace:*",
+    "electron-updater": "^6.3.0",
+    "livekit-client": "^2.9.0",
+    "zustand": "^5.0.2"
+  },
+```
+
+Add scripts:
+
+```json
+    "package": "electron-builder",
+    "package:linux": "electron-builder --linux AppImage deb",
+    "package:win": "electron-builder --win nsis",
+    "package:mac": "electron-builder --mac dmg",
+```
+
+Run `pnpm install`.
+
+- [ ] **Step 2: Create `electron-builder.yml`**
+
+```yaml
+appId: com.r3dwolfie.redvoice
+productName: RedVoice
+copyright: Copyright © 2026 R3dWolfie
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "out/**/*"
+  - "package.json"
+
+asar: true
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Network
+  icon: build/icon.png
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.social-networking
+  icon: build/icon.png
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Code signing intentionally not configured — user flagged for later.
+
+publish:
+  provider: github
+  owner: R3dWolfie
+  repo: RedVoice
+  releaseType: release
+```
+
+- [ ] **Step 3: `entitlements.mac.plist`**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+</dict>
+</plist>
+```
+
+- [ ] **Step 4: Placeholder icon**
+
+Generate a 512×512 PNG any way you want (ImageMagick: `convert -size 512x512 xc:#d63850 -pointsize 200 -fill white -gravity center -draw "text 0,0 'RV'" build/icon.png`). If ImageMagick isn't installed, create a solid-color PNG via Node+sharp OR just download a freely-licensed temporary icon. Replace properly in a later polish pass.
+
+- [ ] **Step 5: Package locally**
+
+Run: `pnpm --filter @redvoice/client run build && pnpm --filter @redvoice/client run package:linux`
+Expected: `apps/client/release/RedVoice-0.0.0.AppImage` appears.
+
+Launch: `./apps/client/release/RedVoice-0.0.0.AppImage` — should open and behave identically to `pnpm dev`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/client
+git commit -m "feat(client): electron-builder config + local packaging (Linux AppImage/deb, Win NSIS, macOS dmg)"
+```
+
+---
+
+## Task 2: Auto-update wiring
+
+**Files:**
+- Create: `apps/client/src/main/auto-update.ts`
+- Modify: `apps/client/src/main/index.ts`
+
+- [ ] **Step 1: `auto-update.ts`**
+
+```ts
+import { app, BrowserWindow, dialog } from "electron";
+import pkg from "electron-updater";
+const { autoUpdater } = pkg;
+
+export function initAutoUpdate(): void {
+  // Only run against packaged builds — skip during `pnpm dev`.
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("Update available:", info.version);
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    dialog
+      .showMessageBox(win ?? new BrowserWindow({ show: false }), {
+        type: "info",
+        buttons: ["Restart now", "Later"],
+        defaultId: 0,
+        title: "Update ready",
+        message: `RedVoice ${info.version} is ready. Restart to apply.`,
+      })
+      .then((res) => {
+        if (res.response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("Auto-update error:", err);
+  });
+
+  // Check every 2 hours
+  void autoUpdater.checkForUpdatesAndNotify();
+  setInterval(() => void autoUpdater.checkForUpdatesAndNotify(), 2 * 60 * 60 * 1000);
+}
+```
+
+- [ ] **Step 2: Call in main/index.ts**
+
+In the `app.whenReady().then(async () => { ... })` block, add `initAutoUpdate();` (import at top).
+
+- [ ] **Step 3: Typecheck + commit**
+
+```bash
+git commit -m "feat(client): electron-updater wiring (no-op in dev, polls every 2h when packaged)"
+```
+
+---
+
+## Task 3: GitHub Actions release workflow
+
+**Files:**
+- Create: `.github/workflows/release.yml`
+
+- [ ] **Step 1: Workflow**
+
+```yaml
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @redvoice/shared build
+      - run: pnpm --filter @redvoice/client run build
+      - name: Package
+        run: pnpm --filter @redvoice/client run package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git commit -m "ci: release workflow — packages installers on tag push"
+```
+
+---
+
+## Task 4: Deep links (redvoice://join/<id>)
+
+**Files:**
+- Create: `apps/client/src/main/deep-links.ts`
+- Modify: `apps/client/src/main/index.ts`
+- Modify: `apps/client/src/shared/bridge-types.ts`
+- Modify: `apps/client/src/preload/index.ts`
+- Modify: `apps/client/src/renderer/src/screens/LobbyScreen.tsx`
+
+- [ ] **Step 1: `deep-links.ts`**
+
+```ts
+import { app, BrowserWindow, type IpcMain } from "electron";
+
+const PROTOCOL = "redvoice";
+
+let pendingUrl: string | null = null;
+let mainWindow: BrowserWindow | null = null;
+
+export function registerProtocol(): void {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [process.argv[1]!]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+  }
+}
+
+export function setMainWindow(win: BrowserWindow): void {
+  mainWindow = win;
+  if (pendingUrl) {
+    deliverUrl(pendingUrl);
+    pendingUrl = null;
+  }
+}
+
+function extractRoomId(rawUrl: string): string | null {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== `${PROTOCOL}:`) return null;
+    // redvoice://join/<uuid>
+    const parts = u.pathname.replace(/^\//, "").split("/");
+    if (u.hostname === "join" && parts[0]) return parts[0];
+    if (u.pathname === "" && parts[0]) return parts[0];
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function handleIncomingUrl(rawUrl: string): void {
+  if (mainWindow) deliverUrl(rawUrl);
+  else pendingUrl = rawUrl;
+}
+
+function deliverUrl(rawUrl: string): void {
+  const roomId = extractRoomId(rawUrl);
+  if (!roomId || !mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+  mainWindow.webContents.send("deep-link:join", roomId);
+}
+
+export function wireAppEvents(): void {
+  // macOS delivers URLs via 'open-url'
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    handleIncomingUrl(url);
+  });
+
+  // Windows/Linux: second instance args include the URL
+  app.on("second-instance", (_event, argv) => {
+    const url = argv.find((a) => a.startsWith(`${PROTOCOL}://`));
+    if (url) handleIncomingUrl(url);
+  });
+}
+```
+
+- [ ] **Step 2: Main-process wiring**
+
+In `main/index.ts`, early:
+
+```ts
+import { registerProtocol, setMainWindow, wireAppEvents, handleIncomingUrl } from "./deep-links.js";
+
+// Enforce single instance so deep links go to the running app
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  process.exit(0);
+}
+
+registerProtocol();
+wireAppEvents();
+```
+
+Check the initial argv for a URL too:
+
+```ts
+const initialDeepLink = process.argv.find((a) => a.startsWith("redvoice://"));
+if (initialDeepLink) handleIncomingUrl(initialDeepLink);
+```
+
+After `createWindow()`:
+
+```ts
+const windows = BrowserWindow.getAllWindows();
+if (windows[0]) setMainWindow(windows[0]);
+```
+
+- [ ] **Step 3: Bridge**
+
+Add to `RedVoiceBridge`:
+
+```ts
+onDeepLinkJoin(cb: (roomId: string) => void): () => void;
+```
+
+Preload:
+
+```ts
+onDeepLinkJoin: (cb) => {
+  const handler = (_evt: Electron.IpcRendererEvent, roomId: string): void => cb(roomId);
+  ipcRenderer.on("deep-link:join", handler);
+  return () => ipcRenderer.off("deep-link:join", handler);
+},
+```
+
+- [ ] **Step 4: LobbyScreen listens**
+
+In `LobbyScreen.tsx`, in a useEffect:
+
+```tsx
+useEffect(() => {
+  const cleanup = window.redvoice.onDeepLinkJoin((roomId) => {
+    void store.getState().join(roomId);
+  });
+  return cleanup;
+}, [store]);
+```
+
+- [ ] **Step 5: Update CopyLinkButton**
+
+The button currently copies `http://server/join/<id>`. Keep that OR add a second button "Copy deep link" that copies `redvoice://join/<id>`. For MVP, update the existing button to prefer the deep-link form when the user has the app installed — but since we can't detect that, make both available:
+
+```tsx
+// Two buttons: "Copy link" (http URL for non-installed recipients) and
+// "Copy deep link" (redvoice:// for installed recipients).
+```
+
+Actually, simpler: just change the copy to `redvoice://join/<roomId>` since anyone running the client has the protocol registered. Document this in README.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -m "feat(client): deep-link protocol redvoice://join/<id>"
+```
+
+---
+
+## Task 5: macOS screen-recording permission onboarding
+
+**Files:**
+- Create: `apps/client/src/renderer/src/components/OnboardingModal.tsx`
+- Modify: `apps/client/src/renderer/src/lib/prefs-store.ts` (add `hasSeenOnboarding`)
+- Modify: `apps/client/src/renderer/src/App.tsx` (mount onboarding on first launch if macOS)
+
+- [ ] **Step 1: prefs addition**
+
+Add to `PrefsState` interface + defaults + setter:
+
+```ts
+hasSeenOnboarding: boolean;
+setHasSeenOnboarding(v: boolean): void;
+```
+
+Default `false`.
+
+- [ ] **Step 2: OnboardingModal**
+
+Full-screen modal that only appears on macOS when `hasSeenOnboarding === false`. Shows:
+- Text explaining screen recording permission
+- "Open System Settings" button → opens via `shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")`
+- "I've granted permission" button → sets `hasSeenOnboarding(true)`, closes
+
+Implement the component with standard modal pattern from SettingsModal.
+
+- [ ] **Step 3: Bridge method for opening prefs**
+
+Add `openSystemPrivacyScreenRecording(): Promise<void>` to bridge + preload, implement in main with `shell.openExternal(...)`.
+
+- [ ] **Step 4: Show on first launch (macOS only)**
+
+In `App.tsx`:
+
+```tsx
+const hasSeenOnboarding = usePrefs((s) => s.hasSeenOnboarding);
+const [platform, setPlatform] = useState<string | null>(null);
+
+useEffect(() => {
+  setPlatform(window.redvoice.platform());
+}, []);
+
+const shouldShow = platform === "darwin" && !hasSeenOnboarding;
+```
+
+Render `{shouldShow && <OnboardingModal />}`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "feat(client): macOS screen-recording permission onboarding on first launch"
+```
+
+---
+
+## Task 6: Text chat via LiveKit DataChannel
+
+**Files:**
+- Create: `apps/client/src/renderer/src/lib/chat-store.ts`
+- Create: `apps/client/src/renderer/src/components/ChatPanel.tsx`
+- Modify: `apps/client/src/renderer/src/lib/livekit-room.ts` (expose data send)
+- Modify: `apps/client/src/renderer/src/screens/InRoomScreen.tsx` (chat panel toggle)
+
+Implementation sketch (no full code — small task):
+- Chat store tracks `messages: Array<{ id, from, text, timestamp }>`
+- `livekit-room.ts` exposes `sendChat(text)` (uses `localParticipant.publishData(new TextEncoder().encode(JSON.stringify({...})))`) and listens for `RoomEvent.DataReceived` to add messages
+- `ChatPanel.tsx`: right-side 280px panel, input at bottom, toggle button in control bar
+- Messages ephemeral — not persisted (chat is in-call only for MVP)
+
+Commit:
+```bash
+git commit -m "feat(client): in-room text chat via LiveKit DataChannel"
+```
+
+---
+
+## Task 7: Picture-in-picture (detachable tile)
+
+**Files:**
+- Modify: `apps/client/src/main/index.ts` (IPC for opening PiP window)
+- Create: `apps/client/src/renderer/src/screens/PipWindow.tsx`
+- Modify: `apps/client/src/renderer/src/main.tsx` (route `?pip=1`)
+
+Implementation sketch:
+- Right-click tile context menu gains "Pop out" action
+- Main process spawns a new `BrowserWindow({ alwaysOnTop: true, width: 400, height: 225, frame: false })` loading `?pip=1&participantId=<id>`
+- PipWindow component connects to the LiveKit room independently (uses same token minting) and renders just that one participant's video
+- Closing the PiP window doesn't leave the room
+
+Complication: requires the PiP window to have its own LiveKit connection OR IPC the track across processes. Simplest MVP: PiP window is just a second renderer that calls the API for a second token and joins the room read-only. Two peers for one user on the server. Acceptable for MVP.
+
+Commit:
+```bash
+git commit -m "feat(client): picture-in-picture detachable tile window"
+```
+
+---
+
+## Task 8: Network quality indicator
+
+**Files:**
+- Create: `apps/client/src/renderer/src/components/NetworkQualityDot.tsx`
+- Modify: `apps/client/src/renderer/src/lib/livekit-room.ts` (track `connectionQuality` per participant)
+- Modify: `apps/client/src/renderer/src/screens/InRoomScreen.tsx` (show dot on each tile)
+
+Implementation sketch:
+- Subscribe to `RoomEvent.ConnectionQualityChanged` → `{ participant, quality: 'excellent' | 'good' | 'poor' | 'unknown' }`
+- Store `Record<identity, quality>` in LiveKitRoom wrapper's snapshot
+- `NetworkQualityDot` renders a small colored dot: green (excellent), yellow (good), red (poor)
+- Placed in each `ParticipantTile`'s corner
+
+Commit:
+```bash
+git commit -m "feat(client): network quality dot per participant tile"
+```
+
+---
+
+## Task 9: Opt-in crash reporting
+
+**Files:**
+- Create: `apps/client/src/main/crash-report.ts`
+- Modify: `apps/client/src/main/index.ts`
+- Modify: `apps/client/src/renderer/src/components/SettingsModal.tsx` (About tab gets opt-in checkbox)
+- Modify: `apps/client/src/renderer/src/lib/prefs-store.ts` (add `crashOptIn`)
+
+Implementation sketch:
+- Use Electron's built-in `crashReporter.start(...)` — no external service needed for MVP
+- Reports saved to `app.getPath("crashDumps")` and can be uploaded to a configured URL; for now just save locally with a note "enable to help debug"
+- Checkbox in About tab: "Save local crash reports for debugging"
+- Off by default; requires user to tick
+
+Commit:
+```bash
+git commit -m "feat(client): opt-in local crash reporter"
+```
+
+---
+
+## Task 10: `frontend-design` UI polish pass
+
+**Context:** Invoke the `frontend-design` skill to do a pass on the renderer's UI. Scope:
+- Login + Register screens
+- Lobby layout
+- Pre-Join check
+- In-Room grid + control bar
+- Settings modal tabs
+- Changelog panel
+
+Goal: distinctive dark theme that doesn't look like generic AI output. Not a Discord pixel-clone — aesthetic only. The current CSS (in `styles.css`) uses a red accent `#d63850` — keep or evolve.
+
+- [ ] **Step 1: Invoke `frontend-design` skill**
+
+Launch an agent using the `frontend-design:frontend-design` subagent type with the task "give RedVoice a distinctive Discord-inspired dark UI pass". Provide the file list above + the spec's "UI direction" note.
+
+- [ ] **Step 2: Review + commit iteratively**
+
+The skill typically produces multiple commits. Let it.
+
+---
+
+## Task 11: Cloudflare + UDP deployment docs
+
+**Files:**
+- Create: `docs/deployment.md`
+- Create: `apps/server/.env.production.example`
+- Modify: `README.md` (link to deployment.md)
+
+Content sketch for `deployment.md`:
+- Prerequisites: domain, Cloudflare account, box to run it on
+- Cloudflare tunnel setup (using `cloudflared` CLI) routing voice.example.com → local app-server
+- Router port-forward for UDP 7881 → box's LAN IP
+- DNS A record for media.example.com → home WAN IP (direct UDP path)
+- Generate production `JWT_SECRET` + `LIVEKIT_API_SECRET` with `openssl rand -base64 32`
+- `docker compose up -d` with production livekit.yaml (different from dev)
+- Firewall opens for UDP 7881 + TCP 7882
+
+Commit:
+```bash
+git commit -m "docs: Cloudflare + UDP deployment walkthrough"
+```
+
+---
+
+## Task 12: Final checks, tag release, verify CI
+
+- [ ] **Step 1: Full workspace checks**
+
+```bash
+pnpm -r typecheck
+pnpm -r test  # expect 64+ tests green
+```
+
+- [ ] **Step 2: README status bump**
+
+```markdown
+**Status:** v0.1.0 — first public release. Installers available in Releases.
+```
+
+- [ ] **Step 3: Tag + push**
+
+```bash
+git tag v0.1.0
+# Confirm with user before pushing — this triggers the release workflow
+git push origin main --tags
+```
+
+- [ ] **Step 4: Verify CI build**
+
+Watch the `release.yml` workflow succeed on GitHub. Installers should appear as draft release assets.
+
+- [ ] **Step 5: Publish the release**
+
+On GitHub, edit the draft release, write release notes (or copy from the Changelog panel's text), publish.
+
+---
+
+## Done — Plan 5 acceptance checklist
+
+- [ ] `pnpm --filter @redvoice/client run package:linux` produces a working AppImage
+- [ ] Auto-update wire-up doesn't crash in dev (no-op) or packaged builds
+- [ ] `redvoice://join/<uuid>` links open the app + route to the room
+- [ ] macOS first-run shows the permission onboarding modal (tested on a macOS machine)
+- [ ] Text chat works between two clients in the same room
+- [ ] Picture-in-picture: right-click → Pop out → detached always-on-top window shows the participant's screen
+- [ ] Network quality dot renders correctly in each tile
+- [ ] Crash-reporting checkbox persists across restarts; off by default
+- [ ] `frontend-design` skill has done a full pass; screens feel distinctive and consistent
+- [ ] `docs/deployment.md` covers Cloudflare + UDP end-to-end
+- [ ] GitHub Actions release workflow builds all three OS targets on tag push
+- [ ] v0.1.0 release published with installer downloads in the README
