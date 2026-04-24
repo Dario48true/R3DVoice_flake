@@ -1,0 +1,47 @@
+appId: com.r3dwolfie.redvoice
+productName: RedVoice
+copyright: Copyright © 2026 R3dWolfie
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "out/**/*"
+  - "package.json"
+
+asar: true
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Network
+  icon: build/icon.png
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.social-networking
+  icon: build/icon.png
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+publish:
+  provider: github
+  owner: R3dWolfie
+  repo: RedVoice
+  releaseType: release

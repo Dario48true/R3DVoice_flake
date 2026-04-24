@@ -1,7 +1,13 @@
 {
   "name": "@redvoice/client",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "RedVoice – low-latency voice/video communication for gamers",
+  "author": {
+    "name": "R3dWolfie",
+    "email": "arui939@gmail.com"
+  },
+  "homepage": "https://github.com/R3dWolfie/RedVoice",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -9,10 +15,15 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package": "electron-builder",
+    "package:linux": "electron-builder --linux AppImage deb",
+    "package:win": "electron-builder --win nsis",
+    "package:mac": "electron-builder --mac dmg"
   },
   "dependencies": {
     "@redvoice/shared": "workspace:*",
+    "electron-updater": "^6.3.0",
     "livekit-client": "^2.9.0",
     "zustand": "^5.0.2"
   },
@@ -22,6 +33,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^35.0.0",
+    "electron-builder": "^26.0.0",
     "electron-vite": "^3.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

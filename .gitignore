@@ -6,6 +6,9 @@ build/
 .env.local
 .DS_Store
 
+# electron-builder app assets (not a build output)
+!apps/client/build/
+
 # Prisma
 apps/server/prisma/*.db
 apps/server/prisma/*.db-journal
