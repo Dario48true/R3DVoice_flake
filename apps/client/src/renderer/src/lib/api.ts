@@ -48,11 +48,14 @@ export class ApiClient {
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}`, {
+      const init: RequestInit = {
         method,
         headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
+      };
+      if (body !== undefined) {
+        init.body = JSON.stringify(body);
+      }
+      response = await fetch(`${this.baseUrl}${path}`, init);
     } catch (err) {
       throw new ApiError("NETWORK", err instanceof Error ? err.message : "network error", 0);
     }
