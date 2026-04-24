@@ -1,6 +1,21 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
+
+interface Release {
+  tag_name: string;
+  name: string;
+  body: string;
+  published_at: string;
+  html_url: string;
+}
+
+const REPO = "R3dWolfie/RedVoice";
+const RELEASES_URL = `https://api.github.com/repos/${REPO}/releases`;
 
 export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElement {
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if (e.key === "Escape") onClose();
@@ -8,6 +23,25 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(RELEASES_URL, { headers: { Accept: "application/vnd.github+json" } });
+        if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+        const data = (await res.json()) as Release[];
+        if (!cancelled) setReleases(data);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "failed to fetch releases");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div
@@ -28,8 +62,8 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
           background: "var(--bg-elev)",
           border: "1px solid var(--border)",
           borderRadius: 8,
-          width: 560,
-          maxHeight: "80vh",
+          width: 620,
+          maxHeight: "85vh",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -55,41 +89,26 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
         </div>
 
         <div style={{ padding: 20, overflowY: "auto", display: "flex", flexDirection: "column", gap: 20 }}>
-          <Group title="Shipped" color="var(--accent)">
-            <Item icon="✓">Accounts + persistent rooms</Item>
-            <Item icon="✓">Screenshare up to 4K / 60fps</Item>
-            <Item icon="✓">Stream audio (system audio) on Windows</Item>
-            <Item icon="✓">Pre-join device check with live mic meter</Item>
-            <Item icon="✓">Participant tiles with talking ring</Item>
-            <Item icon="✓">Maximize a tile with double-click</Item>
-            <Item icon="✓">Right-click a tile for per-person volume</Item>
-            <Item icon="✓">Session persists across app restarts</Item>
+          <Group title="Released" color="var(--accent)">
+            {loading && <Item icon="…">Loading releases…</Item>}
+            {error && <Item icon="!">Couldn't reach GitHub: {error}</Item>}
+            {!loading && !error && releases.length === 0 && <Item icon="·">No releases yet.</Item>}
+            {releases.map((r) => (
+              <ReleaseEntry key={r.tag_name} release={r} />
+            ))}
           </Group>
 
           <Group title="Coming soon" color="#f5a623">
-            <Item icon="🔜">Working voice with mute/unmute</Item>
-            <Item icon="🔜">Settings modal (the gear icon)</Item>
-            <Item icon="🔜">Remember last-used devices + resolution</Item>
-            <Item icon="🔜">Proper screen picker with thumbnails</Item>
-            <Item icon="🔜">Hot-swap mic/speaker without rejoining</Item>
-            <Item icon="🔜">Configurable global push-to-talk hotkey</Item>
-            <Item icon="🔜">Sharp 4K rendering on HiDPI displays</Item>
-            <Item icon="🔜">Participant sidebar + who's-sharing indicator</Item>
-            <Item icon="🔜">Copy-room-link button</Item>
-            <Item icon="🔜">X11 compatibility toggle (Wayland workaround)</Item>
-          </Group>
-
-          <Group title="Later" color="var(--text-dim)">
-            <Item icon="📅">In-room text chat</Item>
-            <Item icon="📅">Picture-in-picture floating tile</Item>
-            <Item icon="📅">Network quality indicator per tile</Item>
-            <Item icon="📅">Distinctive dark UI polish</Item>
-            <Item icon="📅">Deep links (redvoice://join/…)</Item>
-            <Item icon="📅">Auto-update</Item>
-            <Item icon="📅">Installers for Windows / Linux / macOS</Item>
-            <Item icon="📅">Opt-in crash reporting</Item>
-            <Item icon="📅">macOS screen-recording permission onboarding</Item>
-            <Item icon="📅">Cloudflare tunnel + UDP deployment docs</Item>
+            <Item icon="🔜">Installers for Windows / Linux / macOS</Item>
+            <Item icon="🔜">Auto-update</Item>
+            <Item icon="🔜">Deep links (redvoice://join/…)</Item>
+            <Item icon="🔜">In-room text chat</Item>
+            <Item icon="🔜">Picture-in-picture floating tile</Item>
+            <Item icon="🔜">Network quality indicator per tile</Item>
+            <Item icon="🔜">Distinctive dark UI polish</Item>
+            <Item icon="🔜">Opt-in crash reporting</Item>
+            <Item icon="🔜">macOS screen-recording permission onboarding</Item>
+            <Item icon="🔜">Cloudflare tunnel + UDP deployment docs</Item>
           </Group>
 
           <Group title="Not planned" color="var(--text-dim)">
@@ -101,6 +120,39 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
         </div>
       </div>
     </div>
+  );
+}
+
+function ReleaseEntry({ release }: { release: Release }): ReactElement {
+  const date = new Date(release.published_at).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  return (
+    <li style={{ listStyle: "none", padding: 0, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+        <strong style={{ fontSize: 14 }}>{release.name || release.tag_name}</strong>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{date}</span>
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          fontSize: 12,
+          fontFamily: "inherit",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          color: "var(--text-dim)",
+          background: "var(--bg)",
+          padding: 10,
+          borderRadius: 4,
+          maxHeight: 200,
+          overflowY: "auto",
+        }}
+      >
+        {release.body || "(no notes)"}
+      </pre>
+    </li>
   );
 }
 
