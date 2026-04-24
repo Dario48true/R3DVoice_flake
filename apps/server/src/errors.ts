@@ -52,6 +52,13 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
       return;
     }
+    // Rate-limit responses from @fastify/rate-limit
+    if (error.statusCode === 429) {
+      reply.status(429).send({
+        error: { code: "TOO_MANY_REQUESTS", message: error.message },
+      });
+      return;
+    }
     // Anything else: log but don't leak
     request.log.error({ err: error }, "unhandled error");
     reply.status(500).send({
