@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, typ
 import { ApiClient } from "../lib/api.js";
 import { createRoomsStore, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
+import { FeaturesPanel } from "../components/FeaturesPanel.js";
 import { InRoomScreen } from "./InRoomScreen.js";
 import { PreJoinScreen, type PreJoinSelection } from "./PreJoinScreen.js";
 
@@ -33,6 +34,7 @@ export function LobbyScreen(): ReactElement {
   const activeRoomId = useRoomsStore(store, (s) => s.activeRoomId);
 
   const [phase, setPhase] = useState<Phase>({ kind: "lobby" });
+  const [featuresOpen, setFeaturesOpen] = useState(false);
 
   useEffect(() => {
     void store.getState().refresh();
@@ -91,8 +93,16 @@ export function LobbyScreen(): ReactElement {
     <div className="app">
       <div className="topbar">
         <strong>RedVoice</strong>
-        <span style={{ color: "var(--text-dim)" }}>
-          {user?.displayName} —{" "}
+        <span style={{ color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
+          {user?.displayName}
+          <button
+            className="btn secondary"
+            style={{ padding: "4px 10px" }}
+            onClick={() => setFeaturesOpen(true)}
+            title="Features & roadmap"
+          >
+            ✨ Features
+          </button>
           <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={() => void logout()}>
             Log out
           </button>
@@ -157,6 +167,8 @@ export function LobbyScreen(): ReactElement {
           {error && <div className="error">{error}</div>}
         </main>
       </div>
+
+      {featuresOpen && <FeaturesPanel onClose={() => setFeaturesOpen(false)} />}
     </div>
   );
 }
