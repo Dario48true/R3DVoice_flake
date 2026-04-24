@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, desktopCapturer, ipcMain, session } from "electron";
 import { join } from "node:path";
 import { saveToken, getToken, clearToken } from "./token-store.js";
 
@@ -44,6 +44,24 @@ function registerIpcHandlers(): void {
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
+
+  // getDisplayMedia requires an explicit handler in Electron — without it the
+  // renderer's request returns "Not supported". MVP: auto-pick the first screen
+  // source. Plan 4 replaces this with a real picker UI.
+  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+      if (sources.length === 0) {
+        callback({});
+        return;
+      }
+      callback({ video: sources[0]! });
+    } catch (err) {
+      console.error("desktopCapturer.getSources failed:", err);
+      callback({});
+    }
+  });
+
   await createWindow();
 
   app.on("activate", async () => {
