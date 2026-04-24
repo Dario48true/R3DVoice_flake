@@ -4,6 +4,7 @@ import { existsSync, writeFileSync, rmSync } from "node:fs";
 import { saveToken, getToken, clearToken } from "./token-store.js";
 import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.js";
 import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
+import { initAutoUpdate } from "./auto-update.js";
 
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
@@ -84,6 +85,7 @@ function registerIpcHandlers(): void {
 app.whenReady().then(async () => {
   registerIpcHandlers();
   registerScreenPickerHandlers();
+  initAutoUpdate();
 
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     const sourceId = await openScreenPicker();
