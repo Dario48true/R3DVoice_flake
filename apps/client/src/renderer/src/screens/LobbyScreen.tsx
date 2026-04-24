@@ -99,9 +99,9 @@ export function LobbyScreen(): ReactElement {
             className="btn secondary"
             style={{ padding: "4px 10px" }}
             onClick={() => setFeaturesOpen(true)}
-            title="Features & roadmap"
+            title="Changelog & roadmap"
           >
-            ✨ Features
+            📋 Changelog
           </button>
           <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={() => void logout()}>
             Log out

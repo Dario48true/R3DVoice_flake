@@ -44,7 +44,7 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
             alignItems: "center",
           }}
         >
-          <strong>RedVoice · Features & Roadmap</strong>
+          <strong>RedVoice · Changelog & Roadmap</strong>
           <button
             className="btn secondary"
             onClick={onClose}
