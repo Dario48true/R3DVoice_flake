@@ -12,7 +12,7 @@
 
 **Plan 4 dependency:** voice must work in a two-client smoke test. If hypothesis #1 from Plan 4 Task 5 fails, backfill hypothesis #2 (different Opus preset for screenshare audio) before starting Plan 5.
 
-**Explicitly deferred beyond Plan 5 (per user):** server-side recording, noise suppression, spatial audio, mobile clients, advanced mic options (input gain, etc.), code signing.
+**Explicitly deferred beyond Plan 5 (per user — 2026-04-25 revision):** server-side recording, spatial audio, code signing. Mobile clients moved to Plan 6. Camera/webcam, noise suppression, and advanced mic options are now in-scope for Plan 5 as Tasks 13–15.
 
 ---
 
@@ -645,7 +645,187 @@ git commit -m "docs: Cloudflare + UDP deployment walkthrough"
 
 ---
 
-## Task 12: Final checks, tag release, verify CI
+## Task 12: Webcam / camera feature
+
+**Files:**
+- Modify: `apps/client/src/renderer/src/lib/livekit-room.ts` (camera publish helpers)
+- Modify: `apps/client/src/renderer/src/lib/media.ts` (enumerate video inputs)
+- Modify: `apps/client/src/renderer/src/screens/PreJoinScreen.tsx` (camera preview + picker)
+- Modify: `apps/client/src/renderer/src/screens/InRoomScreen.tsx` (camera tile rendering + control-bar toggle)
+- Modify: `apps/client/src/renderer/src/lib/prefs-store.ts` (add `cameraDeviceId`, `publishCamera`)
+- Modify: `apps/client/src/renderer/src/components/SettingsModal.tsx` (camera device picker in Devices tab)
+
+**Context:** LiveKit has first-class camera support — `localParticipant.setCameraEnabled(true)` does the right thing. We treat camera as a separate track from screenshare so both can co-exist. Camera renders in the participant tile as a webcam bubble overlaid on their avatar (or replacing the avatar when no screenshare is active). The existing ParticipantTile logic (screenshare vs avatar) gains a third mode: camera.
+
+- [ ] **Step 1: Extend `lib/media.ts` with video-input enumeration**
+
+Add `listVideoInputs()` following the same pattern as `listAudioInputs`. Filter `kind === "videoinput"`.
+
+- [ ] **Step 2: Add camera to JoinOptions + LiveKitRoom helpers**
+
+In `livekit-room.ts`:
+- Add `publishCamera?: boolean` + `cameraDeviceId?: string` to `JoinOptions`
+- In `join()`, after screenshare publishing: `if (options.publishCamera) { await this.room.localParticipant.setCameraEnabled(true, { deviceId: options.cameraDeviceId }); }`
+- Add `async setCameraEnabled(enabled: boolean): Promise<void>` that wraps `localParticipant.setCameraEnabled`
+
+- [ ] **Step 3: PreJoin camera preview + picker**
+
+Add a "Camera" section (shown only if `publishCamera` checkbox ticked). Shows a `<video>` live-preview of the chosen camera + a device select. Mirror device pick to prefs.
+
+Pattern: `getUserMedia({ video: { deviceId: { exact } } })` → set as `srcObject` on a `<video ref>` → stop stream on unmount or device change (same cleanup pattern as the mic VU meter).
+
+- [ ] **Step 4: Camera tile rendering in InRoomScreen**
+
+`ParticipantTile` currently checks `screenTrack` → video OR avatar. Extend to also check `cameraTrack` (via `findCameraTrack` helper analogous to `findScreenTrack`, filtering `Track.Source.Camera`).
+
+Display priority:
+1. If `screenTrack` exists → show screenshare full-tile, overlay camera as small 120×120 bubble in bottom-right corner
+2. Else if `cameraTrack` exists → show camera full-tile
+3. Else → avatar
+
+- [ ] **Step 5: Camera toggle in control bar**
+
+Add a fourth button alongside Mute / Share / Leave: `📹 Camera on/off`. Calls `roomWrapper.setCameraEnabled(!cameraOn)`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -m "feat(client): webcam/camera feature alongside screenshare"
+```
+
+---
+
+## Task 13: Noise suppression (basic-user-friendly)
+
+**Files:**
+- Modify: `apps/client/package.json` (add `@livekit/krisp-noise-filter`)
+- Modify: `apps/client/src/renderer/src/lib/livekit-room.ts` (wire noise filter to mic track on publish)
+- Modify: `apps/client/src/renderer/src/lib/prefs-store.ts` (add `noiseSuppression: "off" | "low" | "high"`)
+- Modify: `apps/client/src/renderer/src/components/SettingsModal.tsx` (add to Devices or new Audio tab)
+
+**Context:** LiveKit ships a Krisp-based noise filter as a separate package. Simple API: `KrispNoiseFilter()` → attach to LocalAudioTrack. For "BASIC users" UX: three presets — Off / Low / High. No raw threshold sliders. Default: Low (conservative — good voice preservation).
+
+- [ ] **Step 1: Install dep**
+
+```bash
+cd apps/client && pnpm add @livekit/krisp-noise-filter
+```
+
+- [ ] **Step 2: Apply filter on mic publish**
+
+In `LiveKitRoom.join()`, when the mic stream publishes, wrap:
+
+```ts
+import { KrispNoiseFilter, isKrispNoiseFilterSupported } from "@livekit/krisp-noise-filter";
+
+// Where options.noiseSuppression is "low" | "high" | "off":
+if (options.noiseSuppression !== "off" && isKrispNoiseFilterSupported()) {
+  const filter = KrispNoiseFilter();
+  await micPublication.setAudioFilter(filter);
+  // Krisp doesn't expose intensity knobs directly; low/high is handled by:
+  // - "low" = default (no extra processing beyond noise removal)
+  // - "high" = additional high-pass filter via Web Audio pre-step
+}
+```
+
+If "high" mode needs extra processing (e.g. narrow-band filtering), add a simple `BiquadFilterNode(highpass, 120Hz)` chained before the Krisp filter.
+
+- [ ] **Step 3: Settings UI**
+
+In the Devices tab (or new Audio tab), add:
+
+```tsx
+<label>
+  <div className="section-title">Noise suppression</div>
+  <select value={noise} onChange={(e) => prefsActions().setNoiseSuppression(e.target.value)}>
+    <option value="off">Off</option>
+    <option value="low">Low (recommended)</option>
+    <option value="high">High (aggressive)</option>
+  </select>
+</label>
+```
+
+Changing the setting while in-room: Plan 5 MVP is "applies on next room join". Mid-room swap requires republishing the mic track — add in Task 15 if easy, defer otherwise.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -m "feat(client): Krisp noise suppression with Off/Low/High presets"
+```
+
+---
+
+## Task 14: Advanced mic options (input gain, AGC toggle, noise gate)
+
+**Files:**
+- Modify: `apps/client/src/renderer/src/lib/media.ts` (add `openMicStream` overload with constraints)
+- Modify: `apps/client/src/renderer/src/lib/prefs-store.ts` (add `micGain: number`, `autoGain: boolean`, `noiseGate: boolean`)
+- Modify: `apps/client/src/renderer/src/components/SettingsModal.tsx` (new "Audio" tab)
+- Modify: `apps/client/src/renderer/src/lib/livekit-room.ts` (apply Web Audio gain node before publish)
+
+**Context:** Three basic-user-friendly knobs:
+- **Input gain** (0 – 200%, default 100%) → `GainNode` pre-publish
+- **Auto gain control** (toggle, default on) → `audio: { autoGainControl: bool }` constraint
+- **Noise gate** (toggle, default off) → `audio: { noiseSuppression: bool }` constraint (separate from Krisp in Task 13 — WebRTC's built-in; compound is OK)
+
+These live in a new **"Audio" tab** in Settings modal (alongside Devices, Keybinds, Compatibility, About).
+
+- [ ] **Step 1: Extend prefs + add tab**
+
+Prefs defaults: `micGain: 1.0`, `autoGain: true`, `noiseGate: false`, plus the Task 13 `noiseSuppression` above.
+
+New AudioTab component with three controls:
+```
+Input gain   [==========○------] 100%    (slider 0-200)
+☑ Auto gain control (AGC)
+☐ Noise gate (basic)
+```
+
+- [ ] **Step 2: Apply to mic track**
+
+In `openMicStream` accept options:
+```ts
+export async function openMicStream(
+  deviceId: string | undefined,
+  opts?: { autoGain?: boolean; noiseGate?: boolean },
+): Promise<MediaStream> {
+  const constraints: MediaStreamConstraints = {
+    audio: {
+      ...(deviceId && { deviceId: { exact: deviceId } }),
+      ...(opts?.autoGain !== undefined && { autoGainControl: opts.autoGain }),
+      ...(opts?.noiseGate !== undefined && { noiseSuppression: opts.noiseGate }),
+      echoCancellation: true, // always on — don't expose
+    },
+    video: false,
+  };
+  return navigator.mediaDevices.getUserMedia(constraints);
+}
+```
+
+Gain is applied post-capture via Web Audio, since `getUserMedia` has no standard gain constraint. In `LiveKitRoom.join()`, before publish:
+
+```ts
+if (options.micGain !== undefined && options.micGain !== 1.0) {
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(options.micStream);
+  const gain = ctx.createGain();
+  gain.gain.value = options.micGain;
+  const dest = ctx.createMediaStreamDestination();
+  src.connect(gain).connect(dest);
+  const gainedTrack = dest.stream.getAudioTracks()[0];
+  // publish `gainedTrack` instead of the raw one
+}
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git commit -m "feat(client): advanced mic options (gain, AGC, noise gate) in Settings → Audio tab"
+```
+
+---
+
+## Task 15: Final checks, tag release, verify CI
 
 - [ ] **Step 1: Full workspace checks**
 
@@ -692,3 +872,6 @@ On GitHub, edit the draft release, write release notes (or copy from the Changel
 - [ ] `docs/deployment.md` covers Cloudflare + UDP end-to-end
 - [ ] GitHub Actions release workflow builds all three OS targets on tag push
 - [ ] v0.1.0 release published with installer downloads in the README
+- [ ] Webcam preview works in Pre-Join; camera tile renders in-room (with screenshare overlay fallback)
+- [ ] Noise suppression Off/Low/High select applies on next join; verified with loud-background call
+- [ ] Audio tab shows gain/AGC/noise-gate; gain slider audibly changes published volume

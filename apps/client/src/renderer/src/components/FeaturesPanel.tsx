@@ -98,7 +98,7 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
             ))}
           </Group>
 
-          <Group title="Coming soon" color="#f5a623">
+          <Group title="Coming soon (Plan 5)" color="#f5a623">
             <Item icon="🔜">Installers for Windows / Linux / macOS</Item>
             <Item icon="🔜">Auto-update</Item>
             <Item icon="🔜">Deep links (redvoice://join/…)</Item>
@@ -109,12 +109,19 @@ export function FeaturesPanel({ onClose }: { onClose: () => void }): ReactElemen
             <Item icon="🔜">Opt-in crash reporting</Item>
             <Item icon="🔜">macOS screen-recording permission onboarding</Item>
             <Item icon="🔜">Cloudflare tunnel + UDP deployment docs</Item>
+            <Item icon="🔜">Webcam alongside screenshare</Item>
+            <Item icon="🔜">Noise suppression (Off / Low / High)</Item>
+            <Item icon="🔜">Advanced mic options (gain, AGC, noise gate)</Item>
+          </Group>
+
+          <Group title="Later (Plan 6)" color="#888">
+            <Item icon="📅">Mobile clients — iOS &amp; Android (voice + viewing; no screenshare from mobile)</Item>
           </Group>
 
           <Group title="Not planned" color="var(--text-dim)">
             <Item icon="✗">Server-side recording</Item>
-            <Item icon="✗">Noise suppression / spatial audio</Item>
-            <Item icon="✗">Mobile clients</Item>
+            <Item icon="✗">Spatial audio</Item>
+            <Item icon="✗">Publishing screenshare FROM mobile (iOS limitation)</Item>
             <Item icon="✗">Code signing (maybe later)</Item>
           </Group>
         </div>
