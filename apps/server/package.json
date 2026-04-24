@@ -1,0 +1,36 @@
+{
+  "name": "@redvoice/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma": "prisma",
+    "db:migrate": "prisma migrate dev",
+    "db:reset": "prisma migrate reset --force"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.2.0",
+    "@node-rs/argon2": "^2.0.2",
+    "@prisma/client": "^6.1.0",
+    "@redvoice/shared": "workspace:*",
+    "fastify": "^5.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.9.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.0",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
