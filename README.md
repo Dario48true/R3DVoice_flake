@@ -2,18 +2,19 @@
 
 Open-source, self-hostable, Discord-style screenshare + voice chat.
 
-**Status:** Plan 1 (app-server core) in progress.
+**Status:** Plan 2 shipped — app-server + Electron client with auth/lobby. Next: Plan 3 (LiveKit infra + in-room experience).
 
 ## Repo Layout (monorepo, pnpm)
 
 - `apps/server` — Node/Fastify HTTP API (accounts, rooms, LiveKit token minting)
+- `apps/client` — Electron + React desktop client (Windows + Linux)
 - `packages/shared` — TypeScript types shared across client + server
 - `docs/superpowers/specs/` — design specs
 - `docs/superpowers/plans/` — implementation plans
 
-Future: `apps/client` (Electron), `infra/` (Docker Compose).
+Future: `infra/` (Docker Compose for LiveKit + Caddy).
 
-## Local development (app-server)
+## Local development
 
 ```bash
 # Prerequisites: Node ≥20, pnpm ≥9
@@ -25,16 +26,17 @@ cd ../..
 
 # Create apps/server/.env — see apps/server/.env.example
 
-# Run the server (auto-reload)
+# Terminal 1: run the app-server
 pnpm server:dev
 
-# Run the tests
-pnpm server:test
+# Terminal 2: run the Electron client
+pnpm --filter @redvoice/client dev
+
+# Run all tests
+pnpm test
 ```
 
-## Environment variables
-
-The server refuses to start without these (validated at boot):
+## Environment variables (server)
 
 | Var | Description | Example |
 |---|---|---|
@@ -46,7 +48,7 @@ The server refuses to start without these (validated at boot):
 | `PORT` | HTTP port (optional) | `3000` |
 | `HOST` | Bind address (optional) | `0.0.0.0` |
 
-## API
+## HTTP API
 
 All non-auth endpoints require `Authorization: Bearer <jwt>`.
 
