@@ -1,7 +1,14 @@
 {
   "name": "redvoice",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Open-source, self-hostable, Discord-style screenshare + voice chat (Electron + LiveKit)",
+  "license": "AGPL-3.0-or-later",
+  "author": "R3dWolfie",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/R3dWolfie/RedVoice.git"
+  },
   "engines": {
     "node": ">=20"
   },
