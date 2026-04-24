@@ -23,51 +23,102 @@ interface ConnectionState {
   message?: string;
 }
 
-function ParticipantTile({
-  name,
-  isSpeaking,
-  isLocal,
-}: {
+interface ParticipantView {
+  id: string;
   name: string;
   isSpeaking: boolean;
   isLocal: boolean;
-}): ReactElement {
+  screenTrack: Track | null;
+}
+
+function ParticipantTile({ p }: { p: ParticipantView }): ReactElement {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    const track = p.screenTrack;
+    if (!el || !track) return;
+    track.attach(el);
+    return () => {
+      track.detach(el);
+    };
+  }, [p.screenTrack]);
+
   return (
     <div
       style={{
         background: "var(--bg-elev)",
-        border: `2px solid ${isSpeaking ? "var(--accent)" : "var(--border)"}`,
+        border: `2px solid ${p.isSpeaking ? "var(--accent)" : "var(--border)"}`,
         borderRadius: 8,
-        padding: 16,
-        minHeight: 120,
+        padding: p.screenTrack ? 0 : 16,
+        minHeight: 180,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         gap: 8,
         transition: "border-color 120ms linear",
+        overflow: "hidden",
+        position: "relative",
       }}
     >
-      <div
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: "50%",
-          background: "var(--border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontWeight: 600,
-        }}
-      >
-        {name.charAt(0).toUpperCase() || "?"}
-      </div>
-      <div>
-        {name}
-        {isLocal && <span style={{ color: "var(--text-dim)" }}> (you)</span>}
-      </div>
+      {p.screenTrack ? (
+        <>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={p.isLocal}
+            style={{ width: "100%", height: "100%", objectFit: "contain", background: "black" }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: 8,
+              left: 8,
+              background: "rgba(0,0,0,0.6)",
+              padding: "4px 8px",
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {p.name}
+            {p.isLocal && <span style={{ color: "var(--text-dim)" }}> (you)</span>}
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: "50%",
+              background: "var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 600,
+            }}
+          >
+            {p.name.charAt(0).toUpperCase() || "?"}
+          </div>
+          <div>
+            {p.name}
+            {p.isLocal && <span style={{ color: "var(--text-dim)" }}> (you)</span>}
+          </div>
+        </>
+      )}
     </div>
   );
+}
+
+function findScreenTrack(p: LocalParticipant | RemoteParticipant): Track | null {
+  for (const pub of p.trackPublications.values()) {
+    if (pub.source === Track.Source.ScreenShare && pub.track) {
+      return pub.track;
+    }
+  }
+  return null;
 }
 
 export function InRoomScreen(props: InRoomScreenProps): ReactElement {
@@ -85,7 +136,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
   const audioMountRef = useRef<HTMLDivElement | null>(null);
 
-  // Connect on mount, disconnect on unmount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -120,9 +170,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     };
   }, [roomWrapper, props.roomId, props.selection, token, serverUrl]);
 
-  // Attach remote audio tracks as they come in. LiveKit's Track.attach() creates
-  // an <audio> element wired to the track — we insert it into a hidden container
-  // that mounts with the screen so autoplay works.
   useEffect(() => {
     const room = roomWrapper.room;
     const mount = audioMountRef.current;
@@ -153,28 +200,23 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     props.onLeave();
   }
 
-  const participantTiles: Array<{
-    id: string;
-    name: string;
-    isSpeaking: boolean;
-    isLocal: boolean;
-  }> = [];
-
+  const tiles: ParticipantView[] = [];
   if (snapshot.local) {
-    const local: LocalParticipant = snapshot.local;
-    participantTiles.push({
-      id: local.identity,
-      name: local.name || local.identity,
-      isSpeaking: local.isSpeaking,
+    tiles.push({
+      id: snapshot.local.identity,
+      name: snapshot.local.name || snapshot.local.identity,
+      isSpeaking: snapshot.local.isSpeaking,
       isLocal: true,
+      screenTrack: findScreenTrack(snapshot.local),
     });
   }
   for (const remote of snapshot.remotes as RemoteParticipant[]) {
-    participantTiles.push({
+    tiles.push({
       id: remote.identity,
       name: remote.name || remote.identity,
       isSpeaking: remote.isSpeaking,
       isLocal: false,
+      screenTrack: findScreenTrack(remote),
     });
   }
 
@@ -185,7 +227,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={{ color: "var(--text-dim)" }}>
             {conn.phase === "connecting" && "Connecting…"}
-            {conn.phase === "connected" && `${participantTiles.length} participant(s)`}
+            {conn.phase === "connected" && `${tiles.length} participant(s)`}
             {conn.phase === "error" && `Error: ${conn.message}`}
           </span>
           <button className="btn secondary" onClick={() => void handleLeave()}>
@@ -199,17 +241,16 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             gap: 12,
           }}
         >
-          {participantTiles.map((p) => (
-            <ParticipantTile key={p.id} name={p.name} isSpeaking={p.isSpeaking} isLocal={p.isLocal} />
+          {tiles.map((p) => (
+            <ParticipantTile key={p.id} p={p} />
           ))}
         </div>
       </div>
 
-      {/* Hidden mount point for <audio> elements created by LiveKit track.attach() */}
       <div ref={audioMountRef} style={{ display: "none" }} aria-hidden="true" />
     </div>
   );
