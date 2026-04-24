@@ -5,6 +5,7 @@ import { prisma } from "../db.js";
 import { getConfig } from "../config.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { signSessionToken } from "./jwt.js";
+import { requireAuth } from "./middleware.js";
 import { AuthError, ConflictError, ValidationError } from "../errors.js";
 
 const registerBodySchema = z.object({
@@ -74,5 +75,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       token,
       user: { id: user.id, email: user.email, displayName: user.displayName },
     });
+  });
+
+  app.get("/me", { preHandler: requireAuth }, async (request) => {
+    const user = await prisma.user.findUnique({ where: { id: request.auth!.userId } });
+    if (!user) throw new AuthError("user not found");
+    return { id: user.id, email: user.email, displayName: user.displayName };
+  });
+
+  app.post("/auth/logout", { preHandler: requireAuth }, async (request, reply) => {
+    await prisma.session.update({
+      where: { id: request.auth!.sessionId },
+      data: { revokedAt: new Date() },
+    });
+    reply.status(204).send();
   });
 }
