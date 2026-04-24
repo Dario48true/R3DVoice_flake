@@ -256,6 +256,13 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     }
   }, [prefSpeaker, conn.phase, roomWrapper]);
 
+  useEffect(() => {
+    const cleanup = window.redvoice.onPttEvent((pressed) => {
+      void roomWrapper.setMuted(!pressed);
+    });
+    return cleanup;
+  }, [roomWrapper]);
+
   // ESC closes maximize / menu; click-outside closes menu.
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {

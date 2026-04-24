@@ -13,4 +13,6 @@ export interface RedVoiceBridge {
   listScreenSources(): Promise<Array<{ id: string; name: string; thumbnailDataUrl: string }>>;
   selectScreenSource(sourceId: string): Promise<void>;
   cancelScreenPicker(): Promise<void>;
+  setPttKeybind(accelerator: string | null): Promise<void>;
+  onPttEvent(cb: (pressed: boolean) => void): () => void;
 }

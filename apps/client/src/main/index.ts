@@ -2,6 +2,7 @@ import { app, BrowserWindow, desktopCapturer, ipcMain, session } from "electron"
 import { join } from "node:path";
 import { saveToken, getToken, clearToken } from "./token-store.js";
 import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.js";
+import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
@@ -41,6 +42,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle("auth:get-token", async () => getToken());
   ipcMain.handle("auth:clear-token", async () => clearToken());
   ipcMain.handle("app:platform", () => process.platform);
+  ipcMain.handle("keybind:set-ptt", (_evt, accelerator: unknown) => {
+    const acc = typeof accelerator === "string" && accelerator.length > 0 ? accelerator : null;
+    setPttKeybind(acc, (pressed) => {
+      BrowserWindow.getAllWindows().forEach((w) => {
+        if (!w.webContents.isDestroyed()) w.webContents.send("keybind:ptt", pressed);
+      });
+    });
+  });
 }
 
 app.whenReady().then(async () => {
@@ -75,4 +84,8 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("will-quit", () => {
+  teardownKeybinds();
 });

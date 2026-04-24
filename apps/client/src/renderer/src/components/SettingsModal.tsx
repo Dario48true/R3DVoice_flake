@@ -63,7 +63,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): ReactElemen
         </div>
         <div style={{ padding: 24, flex: 1, overflow: "auto" }}>
           {tab === "devices" && <DevicesTab />}
-          {tab === "keybinds" && <Placeholder label="Keybinds UI lands in Task 7." />}
+          {tab === "keybinds" && <KeybindsTab />}
           {tab === "compatibility" && <Placeholder label="Compatibility options land in Task 10." />}
           {tab === "about" && <About />}
         </div>
@@ -164,6 +164,66 @@ function DevicesTab(): ReactElement {
       </label>
       <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
         Changes apply live — no need to rejoin.
+      </div>
+    </SettingsSection>
+  );
+}
+
+function KeybindsTab(): ReactElement {
+  const current = usePrefs((s) => s.pttKeybind);
+  const [recording, setRecording] = useState(false);
+  const [captured, setCaptured] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+    function onKey(e: KeyboardEvent): void {
+      e.preventDefault();
+      if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Control");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.altKey) parts.push("Alt");
+      if (e.metaKey) parts.push("Super");
+      const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      parts.push(key);
+      setCaptured(parts.join("+"));
+      setRecording(false);
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording]);
+
+  async function save(): Promise<void> {
+    if (!captured) return;
+    await window.redvoice.setPttKeybind(captured);
+    prefsActions().setPttKeybind(captured);
+    setCaptured(null);
+  }
+
+  async function clear(): Promise<void> {
+    await window.redvoice.setPttKeybind(null);
+    prefsActions().setPttKeybind(null);
+  }
+
+  const display = captured ?? current ?? "(none)";
+
+  return (
+    <SettingsSection>
+      <div>
+        <div className="section-title">Push-to-talk</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <code style={{ padding: "4px 8px", background: "var(--bg)", borderRadius: 4, minWidth: 140, display: "inline-block" }}>
+            {display}
+          </code>
+          <button className="btn secondary" onClick={() => setRecording(true)} disabled={recording}>
+            {recording ? "Press a key…" : "Rebind"}
+          </button>
+          {captured && <button className="btn" onClick={() => void save()}>Save</button>}
+          {current && !captured && <button className="btn secondary" onClick={() => void clear()}>Clear</button>}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+          Hold this key to briefly unmute. Works even when the app isn't focused.
+        </div>
       </div>
     </SettingsSection>
   );

@@ -1,7 +1,8 @@
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 import { AuthProvider, useAuthStore } from "./lib/auth-context.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
+import { prefsActions } from "./lib/prefs-singleton.js";
 
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
@@ -20,6 +21,11 @@ function Router(): ReactElement {
 }
 
 export function App(): ReactElement {
+  useEffect(() => {
+    const k = prefsActions().pttKeybind;
+    if (k) void window.redvoice.setPttKeybind(k);
+  }, []);
+
   return (
     <AuthProvider>
       <Router />
