@@ -1287,12 +1287,23 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   useKeybind(openSettingsKeybind, () => setSettingsOpen(true));
   useKeybind(leaveRoomKeybind, () => void handleLeave());
 
+  // LiveKit's setVolume eventually writes HTMLMediaElement.volume which is
+  // clamped to [0, 1] *and throws IndexSizeError* if outside that range —
+  // so anything we forward must be clamped first. (Earlier versions of the
+  // slider went to 200%; saved values like 1.1 then crashed remotes' React
+  // tree on track-subscribe.)
+  function clampVol(v: number): number {
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return v > 1 ? 1 : v;
+  }
+
   function setVoiceVolume(id: string, volume: number): void {
-    setVoiceVolumes((prev) => ({ ...prev, [id]: volume }));
-    prefsActions().setParticipantVolume(id, volume);
+    const v = clampVol(volume);
+    setVoiceVolumes((prev) => ({ ...prev, [id]: v }));
+    prefsActions().setParticipantVolume(id, v);
     const participant = snapshot.remotes.find((r) => r.identity === id);
     if (participant) {
-      participant.setVolume(volume, Track.Source.Microphone);
+      participant.setVolume(v, Track.Source.Microphone);
     }
   }
 
@@ -1300,29 +1311,32 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   // user-set volumes sticky across rejoins / new sessions.
   useEffect(() => {
     for (const remote of snapshot.remotes) {
-      const saved = persistedParticipantVolumes[remote.identity];
-      if (saved !== undefined && saved !== 1) {
-        remote.setVolume(saved, Track.Source.Microphone);
-      }
+      const raw = persistedParticipantVolumes[remote.identity];
+      if (raw === undefined) continue;
+      const v = clampVol(raw);
+      if (v === 1) continue;
+      remote.setVolume(v, Track.Source.Microphone);
     }
   }, [snapshot.remotes, persistedParticipantVolumes]);
 
   function setScreenVolume(id: string, volume: number): void {
-    setScreenVolumes((prev) => ({ ...prev, [id]: volume }));
-    prefsActions().setParticipantScreenVolume(id, volume);
+    const v = clampVol(volume);
+    setScreenVolumes((prev) => ({ ...prev, [id]: v }));
+    prefsActions().setParticipantScreenVolume(id, v);
     const participant = snapshot.remotes.find((r) => r.identity === id);
     if (participant) {
-      participant.setVolume(volume, Track.Source.ScreenShareAudio);
+      participant.setVolume(v, Track.Source.ScreenShareAudio);
     }
   }
 
   // Apply saved screen-audio volumes whenever a remote subscribes.
   useEffect(() => {
     for (const remote of snapshot.remotes) {
-      const saved = persistedScreenVolumes[remote.identity];
-      if (saved !== undefined && saved !== 1) {
-        remote.setVolume(saved, Track.Source.ScreenShareAudio);
-      }
+      const raw = persistedScreenVolumes[remote.identity];
+      if (raw === undefined) continue;
+      const v = clampVol(raw);
+      if (v === 1) continue;
+      remote.setVolume(v, Track.Source.ScreenShareAudio);
     }
   }, [snapshot.remotes, persistedScreenVolumes]);
 
@@ -2032,9 +2046,9 @@ function VolumeRow({
       <input
         type="range"
         min={0}
-        max={200}
+        max={100}
         step={5}
-        value={Math.round(value * 100)}
+        value={Math.round(Math.min(value, 1) * 100)}
         onChange={(e) => onChange(Number(e.target.value) / 100)}
         style={{ width: "100%", accentColor: "var(--accent)" }}
       />
@@ -2048,7 +2062,7 @@ function VolumeRow({
         }}
       >
         <span>0</span>
-        <span>200</span>
+        <span>100</span>
       </div>
     </div>
   );

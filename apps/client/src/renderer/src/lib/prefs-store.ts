@@ -89,12 +89,28 @@ const DEFAULTS = {
   participantScreenVolumes: {} as Record<string, number>,
 };
 
+// LiveKit setVolume → HTMLMediaElement.volume which throws if outside [0, 1].
+// Older builds had a 0..200% slider; values >1 in storage now crash remotes
+// on track-subscribe. Migrate at load time so it can never reach setVolume.
+function clampVolumeMap(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof v === "number" && Number.isFinite(v) ? v : 1;
+    out[k] = n < 0 ? 0 : n > 1 ? 1 : n;
+  }
+  return out;
+}
+
 function load(storage: PrefsStorage): typeof DEFAULTS {
   const raw = storage.read();
   if (!raw) return { ...DEFAULTS };
   try {
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULTS, ...parsed };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const merged = { ...DEFAULTS, ...parsed };
+    merged.participantVolumes = clampVolumeMap(parsed.participantVolumes);
+    merged.participantScreenVolumes = clampVolumeMap(parsed.participantScreenVolumes);
+    return merged;
   } catch {
     return { ...DEFAULTS };
   }

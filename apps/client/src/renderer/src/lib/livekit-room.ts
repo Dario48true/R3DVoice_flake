@@ -206,17 +206,7 @@ export class LiveKitRoom {
     const roomOpts = {
       adaptiveStream: true,
       dynacast: false,
-      // Belt-and-suspenders: some livekit-client versions ignore the
-      // 3rd arg of setScreenShareEnabled. Setting these as room-wide
-      // defaults guarantees the screen track gets the right encoding
-      // regardless of which path constructs it.
       publishDefaults: {
-        // H.264 is hardware-encoded on every modern device (Intel QSV,
-        // AMD VCN, NVIDIA NVENC, Apple VideoToolbox, macOS, Windows MFT,
-        // Linux VA-API). VP8 is software-only in Chromium and saturates
-        // the encoder thread at 1080p60, dropping frames *before* the
-        // wire — sender sees smooth, receivers see 0.5 fps. H.264 also
-        // has the best receiver compatibility.
         screenShareEncoding: {
           maxBitrate: 4_000_000,
           maxFramerate: 60,
