@@ -2,6 +2,7 @@ import {
   Room,
   RoomEvent,
   DataPacket_Kind,
+  AudioPresets,
   type RemoteParticipant,
   type LocalParticipant,
   Track,
@@ -304,8 +305,17 @@ export class LiveKitRoom {
     if (!track) return false;
 
     this.screenAudioAuxStream = auxStream;
+    // High-quality stereo Opus for screenshare audio. The LiveKit default
+    // is a speech preset (~24 kbps mono) which butchers music/game audio.
+    // dtx (discontinuous transmission) drops silent frames — fine for voice,
+    // but it kills tail/decay on music. red (redundant encoding) adds
+    // latency, also undesirable here. forceStereo keeps both channels.
     await this.room.localParticipant.publishTrack(track, {
       source: Track.Source.ScreenShareAudio,
+      audioPreset: AudioPresets.musicHighQualityStereo,
+      dtx: false,
+      red: false,
+      forceStereo: true,
     });
     this.emit();
     return true;
