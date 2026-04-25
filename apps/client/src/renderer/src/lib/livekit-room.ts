@@ -513,6 +513,19 @@ export class LiveKitRoom {
       const screenPub = this.room.localParticipant.getTrackPublication(
         Track.Source.ScreenShare,
       );
+      // Force contentHint="motion" on the underlying MediaStreamTrack — this
+      // tells WebRTC's H.264 encoder to maintain framerate even when scene
+      // motion is low. Default contentHint for screen capture is "detail",
+      // which encodes only when content changes → ~1 fps on a mostly-static
+      // desktop. The join() publish path sets this via setScreenShareEnabled
+      // options; the in-room toggle path doesn't, so we set it here so both
+      // code paths get the same behaviour.
+      const mst = screenPub?.track?.mediaStreamTrack;
+      if (mst && mst.contentHint !== "motion") {
+        mst.contentHint = "motion";
+        // eslint-disable-next-line no-console
+        console.log(`[screenshare] track.contentHint = "motion"`);
+      }
       const sender = (screenPub?.track as unknown as { sender?: RTCRtpSender } | undefined)?.sender;
       if (!sender) return;
 
