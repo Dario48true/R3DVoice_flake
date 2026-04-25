@@ -54,11 +54,14 @@ export interface JoinOptions {
 function computeScreenShareBitrate(width: number, height: number, fps: number): number {
   const pixels = width * height;
   let base: number;
-  if (pixels >= 3840 * 2160) base = 5_000_000; // 4K
-  else if (pixels >= 2560 * 1440) base = 3_000_000; // 1440p
-  else if (pixels >= 1920 * 1080) base = 2_000_000; // 1080p
-  else base = 1_000_000; // 720p and below
-  // 60 fps roughly doubles motion-area cost; mild bump above 30 fps.
+  // Conservative tiers — sized for ~10 Mbps typical home upload after
+  // overhead, reserving headroom for mic + signaling. If you've got
+  // gigabit fiber and want max quality, future setting toggle goes here.
+  if (pixels >= 3840 * 2160) base = 3_000_000; // 4K
+  else if (pixels >= 2560 * 1440) base = 2_000_000; // 1440p
+  else if (pixels >= 1920 * 1080) base = 1_200_000; // 1080p
+  else base = 600_000; // 720p and below
+  // 60 fps adds ~50% to motion-area cost.
   const fpsScale = fps > 30 ? 1.5 : 1;
   return Math.round(base * fpsScale);
 }
@@ -137,6 +140,21 @@ export class LiveKitRoom {
     this.room = new Room({
       adaptiveStream: true,
       dynacast: false,
+      // Belt-and-suspenders: some livekit-client versions ignore the
+      // 3rd arg of setScreenShareEnabled. Setting these as room-wide
+      // defaults guarantees the screen track gets the right encoding
+      // regardless of which path constructs it.
+      publishDefaults: {
+        // VP8 is broadly hardware-accelerated on Intel/AMD/Apple silicon —
+        // VP9 (LiveKit's default) is CPU-heavy and the most common cause of
+        // "choppy on receivers, fine locally" complaints once bitrate
+        // caps are sane. AV1 looks great but is even slower to encode.
+        screenShareEncoding: {
+          maxBitrate: 1_500_000,
+          maxFramerate: 30,
+        },
+        videoCodec: "vp8",
+      },
     });
     this.cachedSnapshot = this.computeSnapshot();
 
@@ -223,6 +241,7 @@ export class LiveKitRoom {
             contentHint: "motion",
           },
           {
+            // Per-publish overrides (room defaults provide the fallback).
             // Cap encoder bitrate so we don't overshoot the user's upload
             // budget. LiveKit's default for screenshare is ~3 Mbps at
             // 1080p30 / ~4.5 Mbps at 60 fps which causes packet drops on
@@ -233,6 +252,7 @@ export class LiveKitRoom {
               maxBitrate: computeScreenShareBitrate(q.width, q.height, q.frameRate),
               maxFramerate: q.frameRate,
             },
+            videoCodec: "vp8",
           },
         );
         if (q.audio) {
