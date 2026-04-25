@@ -1,0 +1,153 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
+import { prisma } from "../db.js";
+import { requireAuth } from "../auth/middleware.js";
+import { AuthError, ConflictError, NotFoundError, ValidationError } from "../errors.js";
+
+const sendBodySchema = z.object({ email: z.string().email() });
+const respondParamsSchema = z.object({ id: z.string().min(1) });
+
+interface FriendDTO {
+  friendshipId: string;
+  status: "pending-incoming" | "pending-outgoing" | "accepted" | "blocked";
+  user: { id: string; displayName: string; email: string };
+  requestedAt: string;
+  respondedAt: string | null;
+}
+
+export async function friendsRoutes(app: FastifyInstance): Promise<void> {
+  app.get(
+    "/friends",
+    { preHandler: requireAuth },
+    async (request) => {
+      const userId = request.auth!.userId;
+      const rows = await prisma.friendship.findMany({
+        where: {
+          OR: [{ requesterId: userId }, { recipientId: userId }],
+        },
+        include: {
+          requester: { select: { id: true, displayName: true, email: true } },
+          recipient: { select: { id: true, displayName: true, email: true } },
+        },
+        orderBy: { requestedAt: "desc" },
+      });
+      const friends: FriendDTO[] = rows.map((f) => {
+        const isRequester = f.requesterId === userId;
+        const other = isRequester ? f.recipient : f.requester;
+        let status: FriendDTO["status"];
+        if (f.status === "pending") {
+          status = isRequester ? "pending-outgoing" : "pending-incoming";
+        } else if (f.status === "blocked") {
+          status = "blocked";
+        } else {
+          status = "accepted";
+        }
+        return {
+          friendshipId: f.id,
+          status,
+          user: other,
+          requestedAt: f.requestedAt.toISOString(),
+          respondedAt: f.respondedAt?.toISOString() ?? null,
+        };
+      });
+      return { friends };
+    },
+  );
+
+  // Send a friend request by email. Server reveals existence/non-existence of
+  // the email — acceptable on an invite-only self-hosted instance. For a
+  // public deployment, swap this for a friend-code mechanism.
+  app.post(
+    "/friends/request",
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+    },
+    async (request, reply) => {
+      const parsed = sendBodySchema.safeParse(request.body);
+      if (!parsed.success) throw new ValidationError("invalid email");
+      const userId = request.auth!.userId;
+      const recipient = await prisma.user.findUnique({
+        where: { email: parsed.data.email.toLowerCase() },
+        select: { id: true, displayName: true, email: true },
+      });
+      if (!recipient) throw new NotFoundError("no user with that email");
+      if (recipient.id === userId) throw new ValidationError("cannot friend yourself");
+
+      // Reject if there's already any friendship row in either direction.
+      const existing = await prisma.friendship.findFirst({
+        where: {
+          OR: [
+            { requesterId: userId, recipientId: recipient.id },
+            { requesterId: recipient.id, recipientId: userId },
+          ],
+        },
+      });
+      if (existing) {
+        if (existing.status === "blocked") throw new ConflictError("blocked");
+        if (existing.status === "accepted") throw new ConflictError("already friends");
+        if (existing.status === "pending") throw new ConflictError("request already pending");
+      }
+
+      let row;
+      try {
+        row = await prisma.friendship.create({
+          data: {
+            requesterId: userId,
+            recipientId: recipient.id,
+            status: "pending",
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          throw new ConflictError("request already pending");
+        }
+        throw err;
+      }
+      reply.status(201).send({
+        friendshipId: row.id,
+        status: "pending-outgoing" as const,
+        user: recipient,
+      });
+    },
+  );
+
+  app.post(
+    "/friends/:id/accept",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = respondParamsSchema.safeParse(request.params);
+      if (!parsed.success) throw new ValidationError("missing id");
+      const userId = request.auth!.userId;
+      const row = await prisma.friendship.findUnique({ where: { id: parsed.data.id } });
+      if (!row) throw new NotFoundError("friendship not found");
+      if (row.recipientId !== userId) throw new AuthError("not the recipient");
+      if (row.status !== "pending") throw new ValidationError("not pending");
+      await prisma.friendship.update({
+        where: { id: row.id },
+        data: { status: "accepted", respondedAt: new Date() },
+      });
+      reply.status(204).send();
+    },
+  );
+
+  app.post(
+    "/friends/:id/reject",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = respondParamsSchema.safeParse(request.params);
+      if (!parsed.success) throw new ValidationError("missing id");
+      const userId = request.auth!.userId;
+      const row = await prisma.friendship.findUnique({ where: { id: parsed.data.id } });
+      if (!row) throw new NotFoundError("friendship not found");
+      if (row.recipientId !== userId && row.requesterId !== userId) {
+        throw new AuthError("not a participant");
+      }
+      // Both reject (recipient declines) and cancel (requester withdraws) just
+      // delete the row. accepted → reject means "unfriend".
+      await prisma.friendship.delete({ where: { id: row.id } });
+      reply.status(204).send();
+    },
+  );
+}

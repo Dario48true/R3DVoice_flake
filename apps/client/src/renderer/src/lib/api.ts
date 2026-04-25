@@ -17,6 +17,8 @@ import type {
   ChatThreadType,
   DmThreadsResponse,
   ChatMessageDTO,
+  FriendsListResponse,
+  FriendRequestResponse,
 } from "@redvoice/shared";
 
 export class ApiError extends Error {
@@ -150,6 +152,20 @@ export class ApiClient {
   }
   dmThreads(): Promise<DmThreadsResponse> {
     return this.request("GET", "/chat/dm-threads");
+  }
+
+  // Friends
+  friends(): Promise<FriendsListResponse> {
+    return this.request("GET", "/friends");
+  }
+  friendRequest(email: string): Promise<FriendRequestResponse> {
+    return this.request("POST", "/friends/request", { email });
+  }
+  friendAccept(friendshipId: string): Promise<void> {
+    return this.request("POST", `/friends/${encodeURIComponent(friendshipId)}/accept`);
+  }
+  friendReject(friendshipId: string): Promise<void> {
+    return this.request("POST", `/friends/${encodeURIComponent(friendshipId)}/reject`);
   }
 
   // Internal helper for HTTP methods beyond GET/POST.

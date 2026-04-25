@@ -4,6 +4,7 @@ import { createRoomsStore, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { FeaturesPanel } from "../components/FeaturesPanel.js";
 import { DmInboxModal } from "../components/DmInboxModal.js";
+import { FriendsModal } from "../components/FriendsModal.js";
 import { SettingsModal } from "../components/SettingsModal.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
@@ -115,6 +116,7 @@ export function LobbyScreen(): ReactElement {
   const [phase, setPhase] = useState<Phase>({ kind: "lobby" });
   const [featuresOpen, setFeaturesOpen] = useState(false);
   const [dmInboxOpen, setDmInboxOpen] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
@@ -253,6 +255,9 @@ export function LobbyScreen(): ReactElement {
             </span>
             <span style={{ fontSize: "var(--t-sm)" }}>{displayName}</span>
           </div>
+          <button className="rv-btn" data-variant="ghost" onClick={() => setFriendsOpen(true)}>
+            <I.Plus size={14} /> Friends
+          </button>
           <button className="rv-btn" data-variant="ghost" onClick={() => setDmInboxOpen(true)}>
             <I.Chat size={14} /> DMs
           </button>
@@ -557,6 +562,14 @@ export function LobbyScreen(): ReactElement {
 
       {featuresOpen && <FeaturesPanel onClose={() => setFeaturesOpen(false)} />}
       <DmInboxModal open={dmInboxOpen} onClose={() => setDmInboxOpen(false)} />
+      <FriendsModal
+        open={friendsOpen}
+        onClose={() => setFriendsOpen(false)}
+        onOpenDm={() => {
+          setFriendsOpen(false);
+          setDmInboxOpen(true);
+        }}
+      />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );

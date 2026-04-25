@@ -21,6 +21,8 @@ model User {
   ownedRooms    Room[]           @relation("RoomOwner")
   memberships   RoomMembership[]
   messages      Message[]
+  friendshipsRequested  Friendship[] @relation("FriendshipRequester")
+  friendshipsReceived   Friendship[] @relation("FriendshipRecipient")
 }
 
 model Session {
@@ -80,4 +82,26 @@ model Message {
 
   @@index([threadType, threadId, createdAt])
   @@index([authorId])
+}
+
+// Friendship between two users. Stored directionally — `requesterId` sent the
+// request, `recipientId` received it. status transitions:
+//   pending  → accepted (recipient accepts)
+//   pending  → rejected (recipient rejects; row is deleted by handler)
+//   accepted → blocked  (either side blocks)
+// Uniqueness enforced at the canonical-pair level via the @@unique constraint.
+model Friendship {
+  id           String   @id @default(uuid())
+  requesterId  String
+  recipientId  String
+  status       String   // "pending" | "accepted" | "blocked"
+  requestedAt  DateTime @default(now())
+  respondedAt  DateTime?
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient User @relation("FriendshipRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, recipientId])
+  @@index([recipientId, status])
+  @@index([requesterId, status])
 }

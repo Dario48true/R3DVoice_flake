@@ -121,6 +121,31 @@ export type ChatWsCommand =
   | { type: "unsubscribe"; threadType: ChatThreadType; threadId: string }
   | { type: "ping" };
 
+// Friends DTOs
+export type FriendStatus = "pending-incoming" | "pending-outgoing" | "accepted" | "blocked";
+
+export interface FriendDTO {
+  friendshipId: string;
+  status: FriendStatus;
+  user: { id: string; displayName: string; email: string };
+  requestedAt: string;
+  respondedAt: string | null;
+}
+
+export interface FriendsListResponse {
+  friends: FriendDTO[];
+}
+
+export interface FriendRequestRequest {
+  email: string;
+}
+
+export interface FriendRequestResponse {
+  friendshipId: string;
+  status: "pending-outgoing";
+  user: { id: string; displayName: string; email: string };
+}
+
 // Error shape returned on any non-2xx
 export interface ErrorResponse {
   error: {
