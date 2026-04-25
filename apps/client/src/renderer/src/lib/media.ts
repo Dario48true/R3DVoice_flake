@@ -3,7 +3,9 @@ export interface DeviceInfo {
   label: string;
 }
 
-async function enumerateByKind(kind: "audioinput" | "audiooutput"): Promise<DeviceInfo[]> {
+async function enumerateByKind(
+  kind: "audioinput" | "audiooutput" | "videoinput",
+): Promise<DeviceInfo[]> {
   const md = globalThis.navigator?.mediaDevices;
   if (!md?.enumerateDevices) return [];
   const devices = await md.enumerateDevices();
@@ -18,6 +20,10 @@ export function listAudioInputs(): Promise<DeviceInfo[]> {
 
 export function listAudioOutputs(): Promise<DeviceInfo[]> {
   return enumerateByKind("audiooutput");
+}
+
+export function listVideoInputs(): Promise<DeviceInfo[]> {
+  return enumerateByKind("videoinput");
 }
 
 /**

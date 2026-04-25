@@ -12,6 +12,7 @@ export type NoiseSuppressionLevel = "off" | "low" | "high";
 export interface PrefsState {
   micDeviceId: string | null;
   speakerDeviceId: string | null;
+  cameraDeviceId: string | null;
   resolution: Resolution;
   frameRate: FrameRate;
   shareAudio: boolean;
@@ -35,6 +36,7 @@ export interface PrefsState {
 
   setMicDeviceId(id: string | null): void;
   setSpeakerDeviceId(id: string | null): void;
+  setCameraDeviceId(id: string | null): void;
   setResolution(r: Resolution): void;
   setFrameRate(f: FrameRate): void;
   setShareAudio(v: boolean): void;
@@ -58,6 +60,7 @@ export interface PrefsState {
 const DEFAULTS = {
   micDeviceId: null as string | null,
   speakerDeviceId: null as string | null,
+  cameraDeviceId: null as string | null,
   resolution: "1080p" as Resolution,
   frameRate: 30 as FrameRate,
   shareAudio: true,
@@ -100,6 +103,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     const payload = {
       micDeviceId: state.micDeviceId,
       speakerDeviceId: state.speakerDeviceId,
+      cameraDeviceId: state.cameraDeviceId,
       resolution: state.resolution,
       frameRate: state.frameRate,
       shareAudio: state.shareAudio,
@@ -126,6 +130,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     ...initial,
     setMicDeviceId: (v) => { set({ micDeviceId: v }); persistFromState(get()); },
     setSpeakerDeviceId: (v) => { set({ speakerDeviceId: v }); persistFromState(get()); },
+    setCameraDeviceId: (v) => { set({ cameraDeviceId: v }); persistFromState(get()); },
     setResolution: (v) => { set({ resolution: v }); persistFromState(get()); },
     setFrameRate: (v) => { set({ frameRate: v }); persistFromState(get()); },
     setShareAudio: (v) => { set({ shareAudio: v }); persistFromState(get()); },

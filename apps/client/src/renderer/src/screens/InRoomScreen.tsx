@@ -11,7 +11,7 @@ import {
 } from "react";
 import { ApiClient } from "../lib/api.js";
 import { useAuthStore } from "../lib/auth-context.js";
-import { openMicPipeline, type MicPipeline } from "../lib/media.js";
+import { openMicPipeline, listVideoInputs, type DeviceInfo, type MicPipeline } from "../lib/media.js";
 import {
   LiveKitRoom,
   RoomEvent,
@@ -268,10 +268,12 @@ function CtxItem({
 
 function Tile({
   tile,
+  fill = false,
   big,
   callbacks,
 }: {
   tile: ParticipantView;
+  fill?: boolean;
   big: boolean;
   callbacks: TileCallbacks;
 }): ReactElement {
@@ -335,7 +337,12 @@ function Tile({
       className={sharing ? "rv-scanlines" : ""}
       style={{
         position: "relative",
-        aspectRatio: big ? "16/9" : "16/10",
+        // In fill mode, the parent grid drives sizing — tile stretches to
+        // fill the cell and the video uses objectFit: contain so nothing
+        // gets cropped (screenshares stay readable, cameras may letterbox).
+        ...(fill
+          ? { width: "100%", height: "100%", minHeight: 0 }
+          : { aspectRatio: big ? "16/9" : "16/10" }),
         borderRadius: "var(--r-lg)",
         background: sharing
           ? "linear-gradient(180deg, oklch(0.18 0.04 22), oklch(0.10 0.02 22))"
@@ -401,19 +408,6 @@ function Tile({
             objectFit: "cover",
             background: "black",
             boxShadow: "var(--shadow-2)",
-          }}
-        />
-      )}
-
-      {tile.isSpeaking && !sharing && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            borderRadius: "inherit",
-            background:
-              "radial-gradient(60% 50% at 50% 60%, color-mix(in oklch, var(--rv-live) 18%, transparent), transparent 70%)",
           }}
         />
       )}
@@ -509,23 +503,71 @@ function GridLayout({
   people: ParticipantView[];
   callbacks: TileCallbacks;
 }): ReactElement {
-  // auto-fit so the grid stays usable on portrait monitors AND when multiple
-  // people are sharing screen — tiles wrap naturally instead of getting
-  // squished into a fixed column count.
+  // Pick column count from container shape + tile count so tiles end up
+  // roughly square in their grid cell — that's the rule that produces
+  // "stack vertically in portrait, side-by-side in landscape" without
+  // hardcoding orientation.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const e = entries[0];
+      if (!e) return;
+      const r = e.contentRect;
+      setSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const n = Math.max(1, people.length);
+  const cols = pickGridColumns(n, size.w, size.h);
   return (
     <div
+      ref={containerRef}
       style={{
         display: "grid",
         gap: "var(--s-3)",
-        gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
-        alignContent: "start",
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        gridAutoRows: "minmax(0, 1fr)",
+        height: "100%",
+        minHeight: 0,
       }}
     >
       {people.map((p) => (
-        <Tile key={p.id} tile={p} big={false} callbacks={callbacks} />
+        <Tile key={p.id} tile={p} fill big={false} callbacks={callbacks} />
       ))}
     </div>
   );
+}
+
+/**
+ * Pick the column count that gives the most cell-area for `n` tiles in
+ * a `w×h` container. Each layout is scored by the area each cell can
+ * occupy without distorting beyond a 16:9-ish ratio. Pure function so it
+ * runs on every render — cheap.
+ */
+function pickGridColumns(n: number, w: number, h: number): number {
+  if (n <= 1 || w <= 0 || h <= 0) return 1;
+  let bestCols = 1;
+  let bestArea = -1;
+  for (let cols = 1; cols <= n; cols += 1) {
+    const rows = Math.ceil(n / cols);
+    const cellW = w / cols;
+    const cellH = h / rows;
+    // Tiles look best when the cell isn't extremely lopsided — penalise
+    // wild aspect ratios so we don't prefer "1 tall column" just because
+    // it gives more pixels.
+    const aspect = cellW / cellH;
+    const aspectPenalty = aspect > 3 || aspect < 1 / 3 ? 0.3 : 1;
+    const area = cellW * cellH * aspectPenalty;
+    if (area > bestArea) {
+      bestArea = area;
+      bestCols = cols;
+    }
+  }
+  return bestCols;
 }
 
 function SpeakerLayout({
@@ -582,6 +624,119 @@ function SpeakerLayout({
 interface AudioSourceOption {
   pid: string;
   label: string;
+}
+
+function CameraControl({
+  cameraOn,
+  roomWrapper,
+}: {
+  cameraOn: boolean;
+  roomWrapper: LiveKitRoom;
+}): ReactElement {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [cameras, setCameras] = useState<DeviceInfo[]>([]);
+  const selectedDeviceId = usePrefs((s) => s.cameraDeviceId);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      // If labels are blank (camera never accessed yet), prompt once so the
+      // user gets named entries instead of "(unnamed device)".
+      let list = await listVideoInputs();
+      if (list.length > 0 && list.every((d) => d.label === "(unnamed device)")) {
+        try {
+          const probe = await navigator.mediaDevices.getUserMedia({ video: true });
+          probe.getTracks().forEach((t) => t.stop());
+          list = await listVideoInputs();
+        } catch { /* permission denied — show whatever we have */ }
+      }
+      if (!cancelled) setCameras(list);
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [pickerOpen]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onMouseDown(): void { setPickerOpen(false); }
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [pickerOpen]);
+
+  async function pickCamera(deviceId: string): Promise<void> {
+    setPickerOpen(false);
+    prefsActions().setCameraDeviceId(deviceId);
+    await roomWrapper.switchCamera(deviceId);
+  }
+
+  return (
+    <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 0 }}>
+      <ControlButton
+        icon={cameraOn ? <I.CameraOff size={20} /> : <I.Camera size={20} />}
+        label={cameraOn ? "Stop camera" : "Camera"}
+        active={cameraOn}
+        emphasis={cameraOn}
+        onClick={() => void roomWrapper.setCamera(!cameraOn, selectedDeviceId ?? undefined)}
+      />
+      <button
+        type="button"
+        aria-label="Pick camera"
+        title="Switch camera"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={() => setPickerOpen((v) => !v)}
+        style={{
+          appearance: "none",
+          border: 0,
+          background: "transparent",
+          color: cameraOn ? "var(--text)" : "var(--text-faint)",
+          cursor: "pointer",
+          padding: "0 4px",
+          marginLeft: -6,
+          height: "100%",
+          display: "inline-flex",
+          alignItems: "center",
+        }}
+      >
+        <I.ChevronDown size={12} />
+      </button>
+      {pickerOpen && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 30,
+            minWidth: 240,
+            maxHeight: 280,
+            overflowY: "auto",
+            padding: 4,
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r-md)",
+            boxShadow: "var(--shadow-2)",
+          }}
+        >
+          {cameras.length === 0 ? (
+            <div style={{ padding: 10, color: "var(--text-faint)", fontSize: "var(--t-xs)" }}>
+              No cameras detected.
+            </div>
+          ) : (
+            cameras.map((c) => (
+              <SourceMenuItem
+                key={c.deviceId}
+                active={selectedDeviceId === c.deviceId}
+                onClick={() => void pickCamera(c.deviceId)}
+              >
+                {c.label}
+              </SourceMenuItem>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ShareAudioControl({
@@ -1704,13 +1859,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
               roomWrapper={roomWrapper}
             />
           )}
-          <ControlButton
-            icon={cameraOn ? <I.CameraOff size={20} /> : <I.Camera size={20} />}
-            label={cameraOn ? "Stop camera" : "Camera"}
-            active={cameraOn}
-            emphasis={cameraOn}
-            onClick={() => void roomWrapper.setCamera(!cameraOn)}
-          />
+          <CameraControl cameraOn={cameraOn} roomWrapper={roomWrapper} />
           <ControlButton
             icon={<I.Headphones size={20} />}
             label={deafened ? "Undeafen" : "Deafen"}

@@ -92,20 +92,26 @@ function mapDisconnectReason(reason: DisconnectReason | undefined): DisconnectKi
 }
 
 /**
- * Conservative max bitrate for screenshare publish. Keeps the sender from
- * overshooting typical home upload bandwidth (~5–10 Mbps) — encoder degrades
- * quality smoothly under cap instead of dropping frames.
+ * Max bitrate for screenshare publish. Sized for *gaming* content at native
+ * framerate — receivers see 0.5 fps blocky garbage when the cap is too low,
+ * because the encoder either skips frames or quantises into a brick wall.
+ *
+ * Reference points (industry):
+ *   Discord 1080p60 ≈ 5–8 Mbps H.264
+ *   Google Meet     ≈ 3–4 Mbps VP9 (presentations, low-motion)
+ *   Twitch ingest   ≈ 6 Mbps  H.264 1080p60
+ *
+ * WebRTC's bandwidth estimator (BWE) will throttle the encoder below this
+ * cap on slow links — a generous cap is safe for users with broadband, and
+ * never pushes more than the link can carry.
  */
 function computeScreenShareBitrate(width: number, height: number, fps: number): number {
   const pixels = width * height;
   let base: number;
-  // Conservative tiers — sized for ~10 Mbps typical home upload after
-  // overhead, reserving headroom for mic + signaling. If you've got
-  // gigabit fiber and want max quality, future setting toggle goes here.
-  if (pixels >= 3840 * 2160) base = 3_000_000; // 4K
-  else if (pixels >= 2560 * 1440) base = 2_000_000; // 1440p
-  else if (pixels >= 1920 * 1080) base = 1_200_000; // 1080p
-  else base = 600_000; // 720p and below
+  if (pixels >= 3840 * 2160) base = 12_000_000; // 4K
+  else if (pixels >= 2560 * 1440) base = 7_000_000; // 1440p
+  else if (pixels >= 1920 * 1080) base = 4_000_000; // 1080p
+  else base = 1_500_000; // 720p and below
   // 60 fps adds ~50% to motion-area cost.
   const fpsScale = fps > 30 ? 1.5 : 1;
   return Math.round(base * fpsScale);
@@ -205,15 +211,17 @@ export class LiveKitRoom {
       // defaults guarantees the screen track gets the right encoding
       // regardless of which path constructs it.
       publishDefaults: {
-        // VP8 is broadly hardware-accelerated on Intel/AMD/Apple silicon —
-        // VP9 (LiveKit's default) is CPU-heavy and the most common cause of
-        // "choppy on receivers, fine locally" complaints once bitrate
-        // caps are sane. AV1 looks great but is even slower to encode.
+        // H.264 is hardware-encoded on every modern device (Intel QSV,
+        // AMD VCN, NVIDIA NVENC, Apple VideoToolbox, macOS, Windows MFT,
+        // Linux VA-API). VP8 is software-only in Chromium and saturates
+        // the encoder thread at 1080p60, dropping frames *before* the
+        // wire — sender sees smooth, receivers see 0.5 fps. H.264 also
+        // has the best receiver compatibility.
         screenShareEncoding: {
-          maxBitrate: 1_500_000,
-          maxFramerate: 30,
+          maxBitrate: 4_000_000,
+          maxFramerate: 60,
         },
-        videoCodec: "vp8" as const,
+        videoCodec: "h264" as const,
       },
       ...(options.enableE2EE && this.keyProvider
         ? {
@@ -396,18 +404,19 @@ export class LiveKitRoom {
             contentHint: "motion",
           },
           {
-            // Per-publish overrides (room defaults provide the fallback).
-            // Cap encoder bitrate so we don't overshoot the user's upload
-            // budget. LiveKit's default for screenshare is ~3 Mbps at
-            // 1080p30 / ~4.5 Mbps at 60 fps which causes packet drops on
-            // typical home upload links — choppy playback for everyone
-            // else. Tighter cap → encoder degrades quality smoothly via
-            // WebRTC bandwidth estimation instead of dropping frames.
+            // Per-publish overrides — room defaults are the fallback for
+            // any path that doesn't supply quality (we always do, but the
+            // double-set is belt-and-suspenders against API changes).
             screenShareEncoding: {
               maxBitrate: computeScreenShareBitrate(q.width, q.height, q.frameRate),
               maxFramerate: q.frameRate,
             },
-            videoCodec: "vp8",
+            videoCodec: "h264",
+            // Gaming/screenshare wants smooth motion — under congestion,
+            // drop *resolution* before frame rate. The default
+            // ("balanced") drops both, which feels like 0.5 fps even on
+            // moderately-loaded networks.
+            degradationPreference: "maintain-framerate",
           },
         );
         if (q.audioSource !== null) {
@@ -599,8 +608,24 @@ export class LiveKitRoom {
     this.emit();
   }
 
-  async setCamera(enabled: boolean): Promise<void> {
-    await this.room.localParticipant.setCameraEnabled(enabled);
+  async setCamera(enabled: boolean, deviceId?: string): Promise<void> {
+    const opts = enabled && deviceId ? { deviceId: { exact: deviceId } } : undefined;
+    await this.room.localParticipant.setCameraEnabled(enabled, opts);
+    this.emit();
+  }
+
+  /**
+   * Live-switch the active camera without re-publishing. If the camera
+   * isn't enabled yet, enables it with the chosen device instead.
+   */
+  async switchCamera(deviceId: string): Promise<void> {
+    if (this.room.localParticipant.isCameraEnabled) {
+      await this.room.switchActiveDevice("videoinput", deviceId);
+    } else {
+      await this.room.localParticipant.setCameraEnabled(true, {
+        deviceId: { exact: deviceId },
+      });
+    }
     this.emit();
   }
 
