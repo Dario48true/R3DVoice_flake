@@ -89,6 +89,14 @@ function toneOf(id: string): 1 | 2 | 3 | 4 | 5 {
   return ((id.charCodeAt(0) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
 }
 
+// Mirror of server-side dmThreadId — canonical-pair so both participants
+// resolve the same thread. Server validates participation; this is just for
+// constructing the URL/threadId on the client side.
+function canonicalDmThreadId(a: string, b: string): string {
+  const [first, second] = a < b ? [a, b] : [b, a];
+  return `${first}:${second}`;
+}
+
 function findScreenTrack(p: LocalParticipant | RemoteParticipant): Track | null {
   for (const pub of p.trackPublications.values()) {
     if (pub.source === Track.Source.ScreenShare && pub.track) {
@@ -629,6 +637,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [deafened, setDeafened] = useState(false);
+  const [dmTarget, setDmTarget] = useState<{ id: string; name: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [layout, setLayout] = useState<LayoutMode>("auto");
 
@@ -1224,6 +1233,16 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             onClose={() => setChatOpen(false)}
           />
         )}
+
+        {dmTarget && snapshot.local && (
+          <RoomChatPanel
+            threadType="dm"
+            threadId={canonicalDmThreadId(snapshot.local.identity, dmTarget.id)}
+            localIdentity={snapshot.local.identity}
+            localName={localDisplayName}
+            onClose={() => setDmTarget(null)}
+          />
+        )}
       </div>
 
       {/* Control bar */}
@@ -1372,9 +1391,16 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           <CtxItem onClick={(e) => e.preventDefault()} title="Coming soon">
             Pin tile
           </CtxItem>
-          <CtxItem onClick={(e) => e.preventDefault()} title="Coming soon">
-            Whisper
-          </CtxItem>
+          {!menuIsLocal && menuParticipant && (
+            <CtxItem
+              onClick={() => {
+                setDmTarget({ id: menuParticipant.id, name: menuParticipant.name });
+                setMenu(null);
+              }}
+            >
+              Send a DM
+            </CtxItem>
+          )}
           <CtxItem danger onClick={(e) => e.preventDefault()} title="Coming soon">
             Mute for me
           </CtxItem>
