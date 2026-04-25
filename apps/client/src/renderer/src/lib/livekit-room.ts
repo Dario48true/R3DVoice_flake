@@ -286,6 +286,50 @@ export class LiveKitRoom {
     this.emit();
   }
 
+  /**
+   * Pull network stats for the local mic track from the underlying RTCPeerConnection.
+   * roundTripTime is the RTT in ms reported by the receiver (server) → roughly 2× the
+   * one-way audio latency. jitter and packetsLost help diagnose stalls; with multi-second
+   * voice delay, jitter buffer ramp-up from packet loss is the usual cause.
+   *
+   * Returns null if no stats are available (no track / not connected yet).
+   */
+  async getNetworkStats(): Promise<{
+    rttMs: number | null;
+    jitterMs: number | null;
+    packetsLost: number | null;
+    bitrateKbps: number | null;
+  } | null> {
+    const audioPub = Array.from(this.room.localParticipant.audioTrackPublications.values()).find(
+      (p) => p.source === Track.Source.Microphone,
+    );
+    if (!audioPub?.track) return null;
+    const report = await audioPub.track.getRTCStatsReport();
+    if (!report) return null;
+
+    let rttMs: number | null = null;
+    let jitterMs: number | null = null;
+    let packetsLost: number | null = null;
+    let bitrateKbps: number | null = null;
+
+    report.forEach((stat: { type: string; [k: string]: unknown }) => {
+      if (stat.type === "remote-inbound-rtp") {
+        const rtt = stat["roundTripTime"];
+        if (typeof rtt === "number") rttMs = rtt * 1000;
+        const jit = stat["jitter"];
+        if (typeof jit === "number") jitterMs = jit * 1000;
+        const lost = stat["packetsLost"];
+        if (typeof lost === "number") packetsLost = lost;
+      }
+      if (stat.type === "outbound-rtp") {
+        const br = stat["targetBitrate"];
+        if (typeof br === "number") bitrateKbps = br / 1000;
+      }
+    });
+
+    return { rttMs, jitterMs, packetsLost, bitrateKbps };
+  }
+
   async setScreenShare(enabled: boolean): Promise<void> {
     await this.room.localParticipant.setScreenShareEnabled(enabled);
     this.emit();

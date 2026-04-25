@@ -649,6 +649,11 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [deafened, setDeafened] = useState(false);
   const [dmTarget, setDmTarget] = useState<{ id: string; name: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [netStats, setNetStats] = useState<{
+    rttMs: number | null;
+    jitterMs: number | null;
+    packetsLost: number | null;
+  } | null>(null);
   const [layout, setLayout] = useState<LayoutMode>("auto");
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
@@ -664,6 +669,28 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async (): Promise<void> => {
+      try {
+        const stats = await roomWrapper.getNetworkStats();
+        if (!cancelled && stats) {
+          setNetStats({
+            rttMs: stats.rttMs,
+            jitterMs: stats.jitterMs,
+            packetsLost: stats.packetsLost,
+          });
+        }
+      } catch { /* */ }
+    };
+    void tick();
+    const interval = setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [roomWrapper, conn.phase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1378,6 +1405,25 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             color: "var(--text-faint)",
           }}
         >
+          {netStats?.rttMs !== null && netStats?.rttMs !== undefined && (
+            <span
+              className="rv-mono"
+              title={`RTT ${Math.round(netStats.rttMs)}ms · jitter ${netStats.jitterMs?.toFixed(1) ?? "—"}ms · lost ${netStats.packetsLost ?? "—"}`}
+              style={{
+                fontSize: 10,
+                letterSpacing: ".1em",
+                textTransform: "uppercase",
+                color:
+                  netStats.rttMs < 150
+                    ? "var(--text-faint)"
+                    : netStats.rttMs < 400
+                      ? "var(--rv-amber)"
+                      : "var(--accent-glow)",
+              }}
+            >
+              ↔ {Math.round(netStats.rttMs)} ms
+            </span>
+          )}
           {pttKeybind && (
             <>
               <kbd style={kbdStyle}>{pttKeybind}</kbd>
