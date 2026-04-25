@@ -1,6 +1,7 @@
 import {
   Room,
   RoomEvent,
+  DataPacket_Kind,
   type RemoteParticipant,
   type LocalParticipant,
   Track,
@@ -155,6 +156,56 @@ export class LiveKitRoom {
     await this.room.disconnect();
     this.connected = false;
     this.emit();
+  }
+
+  /**
+   * Send a chat message to every other participant via DataChannel.
+   * Reliable delivery; ephemeral (no server-side persistence).
+   */
+  async sendChat(text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const payload = new TextEncoder().encode(
+      JSON.stringify({ kind: "chat", text: trimmed, ts: Date.now() }),
+    );
+    await this.room.localParticipant.publishData(payload, { reliable: true });
+  }
+
+  /**
+   * Subscribe to incoming chat messages. Returns unsubscribe.
+   * `from` is the participant identity; `local` denotes self-echo.
+   */
+  onChat(
+    cb: (msg: { from: string; fromName: string; text: string; ts: number; local: boolean }) => void,
+  ): () => void {
+    const handler = (
+      payload: Uint8Array,
+      participant?: RemoteParticipant,
+      _kind?: DataPacket_Kind,
+    ): void => {
+      try {
+        const obj = JSON.parse(new TextDecoder().decode(payload)) as {
+          kind?: string;
+          text?: string;
+          ts?: number;
+        };
+        if (obj.kind !== "chat" || typeof obj.text !== "string") return;
+        if (!participant) return;
+        cb({
+          from: participant.identity,
+          fromName: participant.name || participant.identity,
+          text: obj.text,
+          ts: typeof obj.ts === "number" ? obj.ts : Date.now(),
+          local: false,
+        });
+      } catch {
+        /* drop malformed payloads */
+      }
+    };
+    this.room.on(RoomEvent.DataReceived, handler);
+    return () => {
+      this.room.off(RoomEvent.DataReceived, handler);
+    };
   }
 
   /**

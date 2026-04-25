@@ -26,6 +26,7 @@ import { usePrefs } from "../lib/prefs-singleton.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
+import { RoomChatPanel } from "../components/RoomChatPanel.js";
 
 export interface InRoomScreenProps {
   roomId: string;
@@ -525,6 +526,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [screenVolumes, setScreenVolumes] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<VolumeMenu | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [layout, setLayout] = useState<LayoutMode>("auto");
 
@@ -874,6 +876,15 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           <button
             className="rv-btn rv-btn-icon"
             data-variant="ghost"
+            onClick={() => setChatOpen((c) => !c)}
+            title="Toggle chat"
+            data-active={chatOpen}
+          >
+            <I.Chat size={16} />
+          </button>
+          <button
+            className="rv-btn rv-btn-icon"
+            data-variant="ghost"
             onClick={() => setSettingsOpen(true)}
             title="Settings"
           >
@@ -1053,6 +1064,15 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             </button>
           ))}
         </div>
+
+        {chatOpen && (
+          <RoomChatPanel
+            room={roomWrapper}
+            localIdentity={snapshot.local?.identity ?? "you"}
+            localName={localDisplayName}
+            onClose={() => setChatOpen(false)}
+          />
+        )}
       </div>
 
       {/* Control bar */}

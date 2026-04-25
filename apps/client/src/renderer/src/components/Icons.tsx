@@ -200,6 +200,33 @@ function Pin({ size = 18, style, className }: IconProps): ReactElement {
   );
 }
 
+function Chat({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <path d="M21 12a8 8 0 0 1-12.3 6.7L3 21l2.3-5.7A8 8 0 1 1 21 12z" />
+    </svg>
+  );
+}
+
+function Smile({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+      <path d="M9 9h.01M15 9h.01" />
+    </svg>
+  );
+}
+
+function Send({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <path d="M22 2L11 13" />
+      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </svg>
+  );
+}
+
 // Monogram R Refined: bold custom-cut "R" on a red squircle with a record-dot
 // punched into the bowl. useId() for gradient IDs keeps SSR/hydration stable
 // across renders (replacing the original Math.random() suffix).
@@ -263,5 +290,8 @@ export const I = {
   Headphones,
   Wave,
   Pin,
+  Chat,
+  Smile,
+  Send,
   Logo,
 };
