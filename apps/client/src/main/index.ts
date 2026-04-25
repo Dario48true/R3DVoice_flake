@@ -279,7 +279,11 @@ app.whenReady().then(async () => {
     sendSplashStatus(splash, { phase: "initializing" });
   });
 
-  initAutoUpdate(splash);
+  // Block opening the main window until the update flow settles. If an
+  // update was downloaded we silent-install + relaunch; createWindow never
+  // runs because the process is on its way out.
+  const updateResult = await initAutoUpdate(splash);
+  if (updateResult.kind === "installing") return;
 
   // On Wayland, xdg-desktop-portal is the picker — the OS won't let any app
   // enumerate screens without the user clicking in the portal dialog first.
