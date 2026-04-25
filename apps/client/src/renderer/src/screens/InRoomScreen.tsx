@@ -26,6 +26,8 @@ import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import type { LinuxAudioSourceSummary, WindowsAudioSessionInfo } from "../../../shared/bridge-types.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { RoomInfoPanel } from "../components/RoomInfoPanel.js";
+import { RoomE2EE } from "../lib/room-e2ee.js";
+import { loadKeyPair } from "../lib/key-storage.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
 import { RoomChatPanel } from "../components/RoomChatPanel.js";
@@ -856,6 +858,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   );
 
   const audioMountRef = useRef<HTMLDivElement | null>(null);
+  const e2eeSessionRef = useRef<RoomE2EE | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
@@ -909,6 +912,36 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           publishScreen: props.selection.publishScreen,
           screenQuality: props.selection.screenQuality,
         });
+
+        // Kick off E2EE key distribution. Owner generates the room key;
+        // members request it from peers. Best-effort: if our keypair is
+        // missing or the server/owner hasn't authorized us, the room
+        // simply runs in plaintext.
+        try {
+          const roomMeta = await api.getRoom(props.roomId);
+          const keyPair = loadKeyPair();
+          if (keyPair) {
+            const e2ee = new RoomE2EE({
+              roomWrapper,
+              isOwner: roomMeta.isOwner,
+              keyPair,
+              onKeyApplied: () => {
+                // eslint-disable-next-line no-console
+                console.log("[e2ee] room key applied — frames now SFrame-encrypted");
+              },
+              onError: (err) => {
+                // eslint-disable-next-line no-console
+                console.warn("[e2ee] failed to apply key:", err.message);
+              },
+            });
+            await e2ee.start();
+            e2eeSessionRef.current = e2ee;
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("[e2ee] setup skipped:", err);
+        }
+
         if (!cancelled) setConn({ phase: "connected" });
       } catch (err) {
         if (cancelled) return;
@@ -1038,6 +1071,10 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   }, []);
 
   async function handleLeave(): Promise<void> {
+    if (e2eeSessionRef.current) {
+      e2eeSessionRef.current.stop();
+      e2eeSessionRef.current = null;
+    }
     await roomWrapper.leave();
     props.onLeave();
   }
@@ -1292,6 +1329,28 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           >
             <I.Info size={14} style={{ color: "var(--text-mid)" }} />
           </button>
+          {snapshot.e2eeEnabled && (
+            <span
+              title="Calls in this room are end-to-end encrypted. The server can't read them."
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "2px 6px",
+                borderRadius: "var(--r-pill)",
+                background: "color-mix(in oklch, var(--rv-live) 18%, transparent)",
+                border: "1px solid color-mix(in oklch, var(--rv-live) 40%, transparent)",
+                color: "var(--rv-live)",
+                fontSize: 10,
+                letterSpacing: ".1em",
+                textTransform: "uppercase",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              <I.Lock size={11} />
+              E2EE
+            </span>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>

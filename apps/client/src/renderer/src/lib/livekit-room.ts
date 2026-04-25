@@ -4,12 +4,16 @@ import {
   DataPacket_Kind,
   AudioPresets,
   DisconnectReason,
+  ExternalE2EEKeyProvider,
   type RemoteParticipant,
   type LocalParticipant,
   Track,
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
+// Vite ?worker suffix produces a Worker constructor that's bundled separately.
+// The E2EE worker is where SFrame encryption/decryption runs off the main thread.
+import E2eeWorker from "livekit-client/e2ee-worker?worker";
 import { startSystemAudioStream, stopSystemAudioStream } from "./system-audio-stream.js";
 
 export type DisconnectKind =
@@ -28,6 +32,8 @@ export interface RoomStateSnapshot {
   screenShareAudioEnabled: boolean;
   /** Set when the SFU disconnected us with a meaningful reason (removed/deleted). */
   disconnectKind: DisconnectKind | null;
+  /** True iff E2EE is currently active (room key has been set on the provider). */
+  e2eeEnabled: boolean;
 }
 
 export type RoomStateListener = (state: RoomStateSnapshot) => void;
@@ -160,6 +166,8 @@ export class LiveKitRoom {
   private connected = false;
   private err: string | null = null;
   private disconnectKind: DisconnectKind | null = null;
+  private keyProvider: ExternalE2EEKeyProvider;
+  private e2eeEnabled = false;
   // Cached snapshot — useSyncExternalStore compares by reference, so this must
   // stay stable between LiveKit events or React will loop forever.
   private cachedSnapshot: RoomStateSnapshot;
@@ -169,12 +177,21 @@ export class LiveKitRoom {
   private screenAudioAuxStream: MediaStream | null = null;
 
   constructor() {
+    // E2EE is wired up at room construction. The provider doesn't apply any
+    // encryption until setRoomKey() is called — when no key is set the room
+    // publishes plaintext, exactly like a non-E2EE setup. Toggle is purely
+    // a function of "has a key been set".
+    this.keyProvider = new ExternalE2EEKeyProvider();
     // dynacast disabled — it changes simulcast layer counts at runtime and
     // has been the source of "BUNDLE codec collision PT=111" failures with
     // some server versions. adaptiveStream is fine (purely receive-side).
     this.room = new Room({
       adaptiveStream: true,
       dynacast: false,
+      e2ee: {
+        keyProvider: this.keyProvider,
+        worker: new E2eeWorker(),
+      },
       // Belt-and-suspenders: some livekit-client versions ignore the
       // 3rd arg of setScreenShareEnabled. Setting these as room-wide
       // defaults guarantees the screen track gets the right encoding
@@ -235,7 +252,29 @@ export class LiveKitRoom {
         Track.Source.ScreenShareAudio,
       ) != null,
       disconnectKind: this.disconnectKind,
+      e2eeEnabled: this.e2eeEnabled,
     };
+  }
+
+  /**
+   * Set the shared E2EE key for this room. Once set, all subsequently-
+   * published frames are SFrame-encrypted, and incoming frames are
+   * decrypted with the same key. Pass an ArrayBuffer of 32 random bytes
+   * for HKDF-derived keys (recommended).
+   */
+  async setRoomKey(rawKey: ArrayBuffer): Promise<void> {
+    await this.keyProvider.setKey(rawKey);
+    await this.room.setE2EEEnabled(true);
+    this.e2eeEnabled = true;
+    this.emit();
+  }
+
+  /** Disable E2EE on this room (revert to plaintext). */
+  async clearRoomKey(): Promise<void> {
+    if (!this.e2eeEnabled) return;
+    await this.room.setE2EEEnabled(false);
+    this.e2eeEnabled = false;
+    this.emit();
   }
 
   private emit(): void {

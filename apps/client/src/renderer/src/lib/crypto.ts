@@ -80,6 +80,51 @@ export function decryptDM(
   }
 }
 
+/**
+ * Generic byte-level NaCl box wrapper. Used by room-e2ee.ts to ferry the
+ * room SFrame key between participants without surfacing the bytes to the
+ * server. Wire format mirrors EncryptedDMPayload.
+ */
+export interface EncryptedBytes {
+  v: 1;
+  n: string;
+  c: string;
+  s: string;
+}
+
+export function encryptBytes(
+  plaintext: Uint8Array,
+  recipientPublicKey: string,
+  senderKeyPair: KeyPair,
+): EncryptedBytes {
+  const nonce = nacl.randomBytes(nacl.box.nonceLength);
+  const recipientPub = naclUtil.decodeBase64(recipientPublicKey);
+  const senderSec = naclUtil.decodeBase64(senderKeyPair.secretKey);
+  const ciphertext = nacl.box(plaintext, nonce, recipientPub, senderSec);
+  return {
+    v: 1,
+    n: naclUtil.encodeBase64(nonce),
+    c: naclUtil.encodeBase64(ciphertext),
+    s: senderKeyPair.publicKey,
+  };
+}
+
+export function decryptBytes(
+  payload: EncryptedBytes,
+  recipientKeyPair: KeyPair,
+): Uint8Array | null {
+  try {
+    if (payload.v !== 1) return null;
+    const nonce = naclUtil.decodeBase64(payload.n);
+    const ciphertext = naclUtil.decodeBase64(payload.c);
+    const senderPub = naclUtil.decodeBase64(payload.s);
+    const recipientSec = naclUtil.decodeBase64(recipientKeyPair.secretKey);
+    return nacl.box.open(ciphertext, nonce, senderPub, recipientSec);
+  } catch {
+    return null;
+  }
+}
+
 /** True if `s` looks like a valid base64-encoded 32-byte key (44 chars). */
 export function isPlausibleKey(s: string): boolean {
   if (typeof s !== "string") return false;
