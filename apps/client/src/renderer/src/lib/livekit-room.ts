@@ -3,6 +3,7 @@ import {
   RoomEvent,
   DataPacket_Kind,
   AudioPresets,
+  DisconnectReason,
   type RemoteParticipant,
   type LocalParticipant,
   Track,
@@ -11,6 +12,13 @@ import {
 } from "livekit-client";
 import { startSystemAudioStream, stopSystemAudioStream } from "./system-audio-stream.js";
 
+export type DisconnectKind =
+  | "removed-by-owner"
+  | "room-deleted"
+  | "server-shutdown"
+  | "duplicate-identity"
+  | "other";
+
 export interface RoomStateSnapshot {
   connected: boolean;
   local: LocalParticipant | null;
@@ -18,6 +26,8 @@ export interface RoomStateSnapshot {
   error: string | null;
   /** True iff the local participant is publishing a screen_share_audio track. */
   screenShareAudioEnabled: boolean;
+  /** Set when the SFU disconnected us with a meaningful reason (removed/deleted). */
+  disconnectKind: DisconnectKind | null;
 }
 
 export type RoomStateListener = (state: RoomStateSnapshot) => void;
@@ -49,6 +59,25 @@ export interface JoinOptions {
   publishScreen?: boolean;
   /** Quality settings for the screenshare publish. Used when publishScreen is true. */
   screenQuality?: ScreenShareQuality;
+}
+
+function mapDisconnectReason(reason: DisconnectReason | undefined): DisconnectKind | null {
+  switch (reason) {
+    case DisconnectReason.PARTICIPANT_REMOVED:
+      return "removed-by-owner";
+    case DisconnectReason.ROOM_DELETED:
+      return "room-deleted";
+    case DisconnectReason.SERVER_SHUTDOWN:
+      return "server-shutdown";
+    case DisconnectReason.DUPLICATE_IDENTITY:
+      return "duplicate-identity";
+    case DisconnectReason.CLIENT_INITIATED:
+    case undefined:
+      // User-initiated leave isn't an "interesting" disconnect; surface as null.
+      return null;
+    default:
+      return "other";
+  }
 }
 
 /**
@@ -130,6 +159,7 @@ export class LiveKitRoom {
   private listeners = new Set<RoomStateListener>();
   private connected = false;
   private err: string | null = null;
+  private disconnectKind: DisconnectKind | null = null;
   // Cached snapshot — useSyncExternalStore compares by reference, so this must
   // stay stable between LiveKit events or React will loop forever.
   private cachedSnapshot: RoomStateSnapshot;
@@ -168,8 +198,9 @@ export class LiveKitRoom {
       this.err = null;
       this.emit();
     });
-    this.room.on(RoomEvent.Disconnected, () => {
+    this.room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
       this.connected = false;
+      this.disconnectKind = mapDisconnectReason(reason);
       this.emit();
     });
     this.room.on(RoomEvent.ParticipantConnected, () => this.emit());
@@ -203,6 +234,7 @@ export class LiveKitRoom {
       screenShareAudioEnabled: this.room.localParticipant.getTrackPublication(
         Track.Source.ScreenShareAudio,
       ) != null,
+      disconnectKind: this.disconnectKind,
     };
   }
 

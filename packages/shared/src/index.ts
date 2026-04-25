@@ -44,15 +44,38 @@ export interface UserDTO {
 // Room DTOs
 export interface CreateRoomRequest {
   name: string;
+  isPublic?: boolean;
+}
+
+export interface UpdateRoomRequest {
+  name?: string;
+  isPublic?: boolean;
+}
+
+export interface InviteMemberRequest {
+  userId: string;
+}
+
+export interface TransferOwnershipRequest {
+  newOwnerId: string;
 }
 
 export interface RoomDTO {
   id: string;
   name: string;
   ownerId: string;
+  isPublic: boolean;
   createdAt: string; // ISO 8601
   isOwner: boolean;
   lastJoined: string | null; // ISO 8601 or null if never joined
+}
+
+export interface RoomMemberDTO {
+  userId: string;
+  displayName: string;
+  isOwner: boolean;
+  joinedAt: string; // ISO 8601
+  lastJoined: string; // ISO 8601
 }
 
 export interface RoomListResponse {

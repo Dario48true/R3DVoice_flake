@@ -25,6 +25,7 @@ import { SettingsModal } from "../components/SettingsModal.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import type { LinuxAudioSourceSummary, WindowsAudioSessionInfo } from "../../../shared/bridge-types.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
+import { RoomInfoPanel } from "../components/RoomInfoPanel.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
 import { RoomChatPanel } from "../components/RoomChatPanel.js";
@@ -1041,6 +1042,17 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     props.onLeave();
   }
 
+  // Server-initiated disconnect (owner removed us, owner deleted the room,
+  // server shutdown) — show a banner for a beat then bounce back to lobby.
+  useEffect(() => {
+    if (!snapshot.disconnectKind) return;
+    const t = setTimeout(() => {
+      void handleLeave();
+    }, 4000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot.disconnectKind]);
+
   async function handleToggleScreen(): Promise<void> {
     const isSharing = hasScreenShare(snapshot.local);
     await roomWrapper.setScreenShare(!isSharing);
@@ -1188,6 +1200,49 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   }
 
   const localDisplayName = user?.displayName ?? snapshot.local?.name ?? snapshot.local?.identity ?? "You";
+
+  // Server-initiated disconnect overlay — shows for ~4 s before auto-bouncing.
+  if (snapshot.disconnectKind) {
+    const message =
+      snapshot.disconnectKind === "removed-by-owner"
+        ? "You were removed from the room by the owner."
+        : snapshot.disconnectKind === "room-deleted"
+          ? "The owner closed this room."
+          : snapshot.disconnectKind === "server-shutdown"
+            ? "The server shut down."
+            : snapshot.disconnectKind === "duplicate-identity"
+              ? "You signed in from another device. Closing this session."
+              : "Disconnected from the server.";
+    return (
+      <div
+        style={{
+          display: "grid",
+          placeItems: "center",
+          height: "100%",
+          padding: "var(--s-7)",
+          background: "var(--bg)",
+        }}
+      >
+        <div
+          className="rv-card"
+          style={{ padding: "var(--s-7)", width: "min(100%, 32rem)", textAlign: "center" }}
+        >
+          <div style={{ fontSize: "var(--t-xl)", marginBottom: "var(--s-3)" }}>{message}</div>
+          <div style={{ color: "var(--text-mid)", fontSize: "var(--t-sm)", marginBottom: "var(--s-5)" }}>
+            Returning to the lobby…
+          </div>
+          <button
+            type="button"
+            className="rv-btn"
+            data-variant="primary"
+            onClick={() => void handleLeave()}
+          >
+            Back to lobby
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1472,54 +1527,14 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
       {/* Room info popover */}
       {roomInfoOpen && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            top: 56,
-            left: "var(--s-5)",
-            zIndex: 30,
-            width: 300,
-            padding: "var(--s-4) var(--s-5)",
-            background: "var(--bg-elev-2)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--r-md)",
-            boxShadow: "var(--shadow-2)",
-            backdropFilter: "blur(8px)",
+        <RoomInfoPanel
+          roomId={props.roomId}
+          onDeparture={() => {
+            setRoomInfoOpen(false);
+            void handleLeave();
           }}
-        >
-          <div className="rv-section-head" style={{ marginBottom: "var(--s-3)" }}>
-            <span className="rv-label">Room</span>
-            <button
-              type="button"
-              onClick={() => setRoomInfoOpen(false)}
-              aria-label="Close"
-              style={{
-                marginLeft: "auto",
-                appearance: "none",
-                border: 0,
-                background: "transparent",
-                color: "var(--text-faint)",
-                cursor: "pointer",
-                padding: 2,
-              }}
-            >
-              <I.X size={12} />
-            </button>
-          </div>
-          <KV
-            label="ID"
-            value={
-              <span className="rv-mono" style={{ fontSize: 10 }}>
-                {props.roomId.slice(0, 16)}…
-              </span>
-            }
-          />
-          <KV label="Codec" value="OPUS · 48 kHz" />
-          <KV label="Region" value="auto · self-hosted" />
-          <KV label="Recording" value={<span style={{ color: "var(--text-faint)" }}>off</span>} />
-        </div>
+          onClose={() => setRoomInfoOpen(false)}
+        />
       )}
 
       {/* Control bar */}

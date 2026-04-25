@@ -6,6 +6,8 @@ import type {
   RegisterRequest as _SharedRegisterRequest,
   RoomDTO,
   RoomListResponse,
+  RoomMemberDTO,
+  UpdateRoomRequest,
   UserDTO,
   LiveKitTokenResponse,
   ErrorResponse,
@@ -49,7 +51,7 @@ export class ApiClient {
   }
 
   private async request<TBody, TRes>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     body?: TBody,
   ): Promise<TRes> {
@@ -131,6 +133,30 @@ export class ApiClient {
   }
   createRoom(body: CreateRoomRequest): Promise<RoomDTO> {
     return this.request("POST", "/rooms", body);
+  }
+  updateRoom(id: string, body: UpdateRoomRequest): Promise<RoomDTO> {
+    return this.request("PATCH", `/rooms/${encodeURIComponent(id)}`, body);
+  }
+  deleteRoom(id: string): Promise<void> {
+    return this.request("DELETE", `/rooms/${encodeURIComponent(id)}`);
+  }
+  transferRoomOwnership(id: string, newOwnerId: string): Promise<RoomDTO> {
+    return this.request("POST", `/rooms/${encodeURIComponent(id)}/transfer`, { newOwnerId });
+  }
+  listRoomMembers(id: string): Promise<RoomMemberDTO[]> {
+    return this.request("GET", `/rooms/${encodeURIComponent(id)}/members`);
+  }
+  inviteRoomMember(id: string, userId: string): Promise<RoomMemberDTO> {
+    return this.request("POST", `/rooms/${encodeURIComponent(id)}/members`, { userId });
+  }
+  removeRoomMember(id: string, userId: string): Promise<void> {
+    return this.request(
+      "DELETE",
+      `/rooms/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    );
+  }
+  leaveRoom(id: string): Promise<void> {
+    return this.request("DELETE", `/rooms/${encodeURIComponent(id)}/membership`);
   }
   mintLiveKitToken(roomId: string): Promise<LiveKitTokenResponse> {
     return this.request("POST", `/rooms/${encodeURIComponent(roomId)}/token`);

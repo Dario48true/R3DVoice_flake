@@ -45,6 +45,11 @@ model Room {
   id        String   @id @default(uuid())
   name      String
   ownerId   String
+  // When true, anyone with the room ID/link can join — token mint skips the
+  // membership check. When false (default for new rooms), only the owner +
+  // explicitly-invited members get a LiveKit token. Existing rooms get
+  // isPublic=true via migration backfill to preserve historical behavior.
+  isPublic  Boolean  @default(false)
   createdAt DateTime @default(now())
 
   owner       User             @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
