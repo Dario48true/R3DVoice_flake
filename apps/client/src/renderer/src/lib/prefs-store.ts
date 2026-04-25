@@ -68,7 +68,11 @@ const DEFAULTS = {
   crashReporting: false,
   noiseSuppression: "low" as NoiseSuppressionLevel,
   echoCancellation: true,
-  autoGainControl: true,
+  // OFF by default — AGC is the most audible mic-processing change and
+  // surprises users who expect their Windows mic settings to be respected
+  // verbatim. Leave EC + NS on since those are nearly universally wanted
+  // (echo loops + background fans); user can turn either off in Settings.
+  autoGainControl: false,
   micGain: 1.0,
   serverUrl: "https://voice.r3dwolfie.com",
   favoriteRoomIds: [] as string[],

@@ -73,20 +73,21 @@ export interface MicProcessingOptions {
   gain?: number;
 }
 
-/** Pref level → mapping the actual pipeline applies. */
+/** Pref level → which software pipeline stages to apply. */
 function nsPolicy(level: "off" | "low" | "high" | undefined): {
-  browserNs: boolean;
   rnnoise: boolean;
 } {
   switch (level ?? "low") {
     case "off":
-      return { browserNs: false, rnnoise: false };
+      return { rnnoise: false };
     case "low":
-      return { browserNs: true, rnnoise: false };
     case "high":
-      // Browser NS handles AEC + DC drift; RNNoise on top kills steady noise
-      // (fans, room hum, keyboard). Heavier CPU, materially better quality.
-      return { browserNs: true, rnnoise: true };
+      // Both levels run the RNNoise WASM worklet — same model. The
+      // distinction in the UI is mostly historical now that we don't use
+      // Chromium's built-in NS at all (browser constraints are forced false
+      // to avoid touching Windows audio settings). Future: add a spectral
+      // gate stage after RNNoise to differentiate "high".
+      return { rnnoise: true };
   }
 }
 
@@ -102,12 +103,16 @@ export async function openMicStream(
   if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
     throw new Error("mic unavailable");
   }
-  const policy = nsPolicy(options.noiseSuppression);
+  // Always request a raw mic stream. Passing `false` to all three constraints
+  // tells Chromium "I don't want WebRTC's APM", which keeps us out of any
+  // codepath that might engage Windows-level audio enhancements / hardware
+  // DSP / "communications mode". All processing is done in our own Web
+  // Audio graph below, in software, scoped to this stream.
   const audioConstraints: MediaTrackConstraints = {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-    noiseSuppression: policy.browserNs,
-    echoCancellation: options.echoCancellation ?? true,
-    autoGainControl: options.autoGainControl ?? true,
+    noiseSuppression: false,
+    echoCancellation: false,
+    autoGainControl: false,
   };
   const constraints: MediaStreamConstraints = {
     audio: audioConstraints,
@@ -115,23 +120,48 @@ export async function openMicStream(
   };
   let stream = await navigator.mediaDevices.getUserMedia(constraints);
 
+  const policy = nsPolicy(options.noiseSuppression);
   if (policy.rnnoise) {
     try {
       // Lazy-load so the ~1.5 MB WASM blob isn't pulled in for users who
-      // never touch noise suppression "high".
+      // never touch noise suppression.
       const { applyRnnoise } = await import("./rnnoise-stream.js");
       stream = await applyRnnoise(stream);
     } catch (err) {
-      // RNNoise failed to set up (worklet/WASM load error) — fall back to
-      // the browser-default mic stream rather than dropping mic entirely.
       // eslint-disable-next-line no-console
-      console.warn("[mic] RNNoise unavailable, using browser-default NS:", err);
+      console.warn("[mic] RNNoise unavailable; mic will be raw:", err);
     }
+  }
+
+  if (options.autoGainControl) {
+    stream = applySoftwareAgc(stream);
   }
 
   const gain = options.gain ?? 1;
   if (gain === 1) return stream;
   return applyGain(stream, gain);
+}
+
+/**
+ * Software AGC via Web Audio's DynamicsCompressor + a fixed make-up gain.
+ * Caps loud peaks (so shouting doesn't blow out the other side), with a
+ * gentle 6:1 ratio that mostly leaves normal speech alone. No interaction
+ * with the OS mic — purely a per-stream Web Audio graph.
+ */
+function applySoftwareAgc(stream: MediaStream): MediaStream {
+  const ctx = new AudioContext();
+  const source = ctx.createMediaStreamSource(stream);
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -18;
+  compressor.knee.value = 30;
+  compressor.ratio.value = 6;
+  compressor.attack.value = 0.005;
+  compressor.release.value = 0.1;
+  const makeup = ctx.createGain();
+  makeup.gain.value = 1.5;
+  const dest = ctx.createMediaStreamDestination();
+  source.connect(compressor).connect(makeup).connect(dest);
+  return dest.stream;
 }
 
 function applyGain(stream: MediaStream, gain: number): MediaStream {
