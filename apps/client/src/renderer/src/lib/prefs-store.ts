@@ -51,7 +51,7 @@ const DEFAULTS = {
   openSettingsKeybind: null as string | null,
   leaveRoomKeybind: null as string | null,
   compatibilityMode: false,
-  serverUrl: "http://localhost:3000",
+  serverUrl: "https://voice.r3dwolfie.com",
 };
 
 function load(storage: PrefsStorage): typeof DEFAULTS {

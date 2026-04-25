@@ -31,7 +31,7 @@ export function resolveIconPath(): string | undefined {
 function findAppIcon(appDir: string): string | null {
   const iconRoot = join(appDir, "usr/share/icons/hicolor");
   if (!existsSync(iconRoot)) return null;
-  for (const size of ["512x512", "256x256", "128x128", "64x64"]) {
+  for (const size of ["1024x1024", "512x512", "256x256", "128x128", "64x64", "48x48", "32x32"]) {
     const appsDir = join(iconRoot, size, "apps");
     if (!existsSync(appsDir)) continue;
     try {

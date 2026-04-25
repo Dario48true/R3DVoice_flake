@@ -128,6 +128,32 @@ export function LobbyScreen(): ReactElement {
   const [newRoomName, setNewRoomName] = useState("");
   const [joinInput, setJoinInput] = useState("");
 
+  // Periodic health probe — drives the "connected" badge in the top bar.
+  // Validates response body so ISP NXDOMAIN redirects don't show green.
+  const [online, setOnline] = useState<"checking" | "ok" | "down">("checking");
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async (): Promise<void> => {
+      try {
+        const res = await fetch(`${serverUrl.replace(/\/$/, "")}/health`);
+        if (cancelled) return;
+        if (!res.ok) return setOnline("down");
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json")) return setOnline("down");
+        const body = (await res.json()) as { status?: string };
+        if (!cancelled) setOnline(body.status === "ok" ? "ok" : "down");
+      } catch {
+        if (!cancelled) setOnline("down");
+      }
+    };
+    void probe();
+    const interval = setInterval(() => void probe(), 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [serverUrl]);
+
   async function onCreate(e: FormEvent): Promise<void> {
     e.preventDefault();
     if (!newRoomName.trim()) return;
@@ -187,8 +213,13 @@ export function LobbyScreen(): ReactElement {
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
           <I.Logo size={24} />
           <span style={{ fontWeight: 700, letterSpacing: "-0.01em", fontSize: "var(--t-md)" }}>RedVoice</span>
-          <span className="rv-badge" data-tone="live" style={{ marginLeft: "var(--s-3)" }}>
-            <span className="pip" /> connected
+          <span
+            className="rv-badge"
+            data-tone={online === "ok" ? "live" : online === "down" ? "red" : "amber"}
+            style={{ marginLeft: "var(--s-3)" }}
+          >
+            <span className="pip" />{" "}
+            {online === "checking" ? "connecting…" : online === "ok" ? "connected" : "offline"}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>

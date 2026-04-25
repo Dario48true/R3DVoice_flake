@@ -90,6 +90,21 @@ async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow
     }, 300);
   });
 
+  // Setting applicationMenu to null drops Electron's default accelerators
+  // (Ctrl+R, Ctrl+Shift+I, F12) along with the menu bar — rebind them here.
+  win.webContents.on("before-input-event", (_evt, input) => {
+    if (input.type !== "keyDown") return;
+    const key = input.key.toLowerCase();
+    const ctrlLike = input.control || input.meta;
+    if (ctrlLike && key === "r" && !input.shift) {
+      win.webContents.reload();
+    } else if (ctrlLike && key === "r" && input.shift) {
+      win.webContents.reloadIgnoringCache();
+    } else if ((ctrlLike && input.shift && key === "i") || key === "f12") {
+      win.webContents.toggleDevTools();
+    }
+  });
+
   if (RENDERER_DEV_URL) {
     await win.loadURL(RENDERER_DEV_URL);
     win.webContents.openDevTools({ mode: "detach" });
@@ -134,6 +149,32 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   registerScreenPickerHandlers();
   writeDesktopEntry();
+
+  // Dev-only: REDVOICE_SPLASH_DEMO=1 cycles every splash phase slowly and
+  // skips the main window so you can inspect the splash in isolation.
+  if (process.env["REDVOICE_SPLASH_DEMO"]) {
+    const splash = openSplashWindow();
+    splash.webContents.once("did-finish-load", () => {
+      const steps: Array<[Parameters<typeof sendSplashStatus>[1], number]> = [
+        [{ phase: "initializing" }, 2000],
+        [{ phase: "checking" }, 2000],
+        [{ phase: "available" }, 2000],
+        [{ phase: "downloading", percent: 15 }, 600],
+        [{ phase: "downloading", percent: 45 }, 600],
+        [{ phase: "downloading", percent: 80 }, 600],
+        [{ phase: "downloading", percent: 100 }, 600],
+        [{ phase: "downloaded" }, 2000],
+        [{ phase: "loading" }, 2000],
+        [{ phase: "ready" }, 30000],
+      ];
+      let t = 0;
+      for (const [status, delay] of steps) {
+        setTimeout(() => sendSplashStatus(splash, status), t);
+        t += delay;
+      }
+    });
+    return;
+  }
 
   // Open splash FIRST so the user sees feedback while the renderer + any
   // update check are warming up.

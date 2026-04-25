@@ -17,7 +17,9 @@ linux:
     - AppImage
     - deb
   category: Network
-  icon: build/icon.png
+  # Point at directory of multi-size PNGs so the AppImage bundles
+  # 32/48/64/128/256/512/1024 — desktop-integration's findAppIcon walks these.
+  icon: build/icons
   artifactName: ${productName}-${version}-${arch}.${ext}
   # Override the executable name away from the sanitized package name
   # (@redvoiceclient). Affects WMClass matching + .desktop lookups.

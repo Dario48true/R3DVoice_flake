@@ -21,6 +21,44 @@ export function LoginScreen(): ReactElement {
     setServerUrl(prefsServerUrl);
   }, [prefsServerUrl, setServerUrl]);
 
+  // Debounced server health probe — validates the response body so ISP
+  // NXDOMAIN redirects or captive portals don't show up as "reachable".
+  const [probe, setProbe] = useState<"idle" | "checking" | "ok" | "down">("idle");
+  useEffect(() => {
+    if (!serverUrl) {
+      setProbe("idle");
+      return;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(serverUrl);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("bad scheme");
+    } catch {
+      setProbe("down");
+      return;
+    }
+    const ctrl = new AbortController();
+    setProbe("checking");
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`${parsed.origin}/health`, {
+          signal: ctrl.signal,
+        });
+        if (!res.ok) return setProbe("down");
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json")) return setProbe("down");
+        const body = (await res.json()) as { status?: string };
+        setProbe(body.status === "ok" ? "ok" : "down");
+      } catch {
+        if (!ctrl.signal.aborted) setProbe("down");
+      }
+    }, 400);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [serverUrl]);
+
   const status = useAuthStore((s) => s.status);
   const error = useAuthStore((s) => s.error);
   const login = useAuthStore((s) => s.login);
@@ -189,7 +227,7 @@ export function LoginScreen(): ReactElement {
               />
               <span
                 className="rv-badge"
-                data-tone="live"
+                data-tone={probe === "ok" ? "live" : probe === "down" ? "red" : "amber"}
                 style={{
                   position: "absolute",
                   right: 8,
@@ -198,7 +236,8 @@ export function LoginScreen(): ReactElement {
                   height: "1.4rem",
                 }}
               >
-                <span className="pip" /> reachable
+                <span className="pip" />{" "}
+                {probe === "checking" ? "checking…" : probe === "ok" ? "reachable" : probe === "down" ? "unreachable" : "—"}
               </span>
             </div>
           </Field>

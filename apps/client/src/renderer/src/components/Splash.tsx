@@ -67,15 +67,6 @@ const titleStyle: CSSProperties = {
   margin: 0,
 };
 
-const tagStyle: CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--t-2xs)",
-  letterSpacing: ".22em",
-  textTransform: "uppercase",
-  color: "var(--text-dim)",
-  marginTop: "calc(-1 * var(--s-3))",
-};
-
 const statusStyle: CSSProperties = {
   fontSize: "var(--t-sm)",
   color: "var(--text-mid)",
@@ -104,10 +95,7 @@ export function Splash(): ReactElement {
       <div style={vignetteStyle} aria-hidden />
       <div style={contentStyle}>
         <I.Logo size={96} />
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-1)" }}>
-          <h1 style={titleStyle}>RedVoice</h1>
-          <span style={tagStyle}>Voice • Screen • Live</span>
-        </div>
+        <h1 style={titleStyle}>RedVoice</h1>
         <div style={statusStyle} aria-live="polite">
           {statusMessage(status)}
         </div>
