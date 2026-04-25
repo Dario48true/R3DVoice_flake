@@ -16,7 +16,8 @@
 // which app to share audio from (Discord/Vesktop UX).
 
 import { app, ipcMain } from "electron";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
+import { writeFileSync } from "node:fs";
 import type { PatchBay as PatchBayType, LinkData, Node } from "@vencord/venmic";
 
 let PatchBay: typeof PatchBayType | null = null;
@@ -191,15 +192,27 @@ export function listLinuxAudioSources(): AudioSourceSummary[] {
     // label + dedup + RedVoice filter on top.
     const nodes = pb.list();
 
-    safeLog(`[linux-audio] venmic returned ${nodes.length} nodes`);
-    if (nodes.length > 0) {
-      // First few full dumps so we can see exactly what fields populate
-      // for ALSA-bridged apps. Trim to keep logs sane.
-      const sample = nodes.slice(0, Math.min(8, nodes.length));
-      for (const n of sample) {
-        safeLog("[linux-audio] node:", JSON.stringify(n));
-      }
+    // AppImages launched from the desktop have closed stdout, so safeLog
+    // disappears. Mirror the diagnostic to a file in userData every time
+    // sources are listed — easy to inspect with any text editor.
+    try {
+      const userData = process.env["REDVOICE_USER_DATA_DIR"] ?? app.getPath("userData");
+      const lines: string[] = [];
+      lines.push(`# linux-audio diagnostic — ${new Date().toISOString()}`);
+      lines.push(`venmic returned ${nodes.length} nodes`);
+      lines.push("");
+      nodes.forEach((n, i) => {
+        lines.push(`--- node ${i} ---`);
+        for (const [k, v] of Object.entries(n)) {
+          lines.push(`  ${k} = ${v}`);
+        }
+      });
+      writeFileSync(join(userData, "linux-audio-debug.log"), lines.join("\n"), "utf8");
+    } catch {
+      /* */
     }
+
+    safeLog(`[linux-audio] venmic returned ${nodes.length} nodes`);
 
     const seen = new Set<string>();
     const out: AudioSourceSummary[] = [];
