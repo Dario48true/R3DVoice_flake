@@ -225,6 +225,7 @@ function ProcessingControls(): ReactElement {
   const ns = usePrefs((s) => s.noiseSuppression);
   const ec = usePrefs((s) => s.echoCancellation);
   const agc = usePrefs((s) => s.autoGainControl);
+  const gain = usePrefs((s) => s.micGain);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
       <div>
@@ -267,6 +268,31 @@ function ProcessingControls(): ReactElement {
         value={ec}
         onChange={(v) => prefsActions().setEchoCancellation(v)}
       />
+      <div style={{ paddingTop: "var(--s-2)" }}>
+        <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>
+          Input gain
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
+          <input
+            type="range"
+            min={0.5}
+            max={3}
+            step={0.05}
+            value={gain}
+            onChange={(e) => prefsActions().setMicGain(Number(e.target.value))}
+            style={{ flex: 1, accentColor: "var(--accent)" }}
+          />
+          <span
+            className="rv-mono"
+            style={{ minWidth: 60, textAlign: "right", fontSize: "var(--t-sm)" }}
+          >
+            {gain.toFixed(2)}× ({gain === 1 ? "0.0" : (20 * Math.log10(gain)).toFixed(1)} dB)
+          </span>
+        </div>
+        <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 4 }}>
+          1.0 = unity. Anything else routes through Web Audio gain pipeline.
+        </div>
+      </div>
     </div>
   );
 }

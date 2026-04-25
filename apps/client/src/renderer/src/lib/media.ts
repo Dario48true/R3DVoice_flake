@@ -65,6 +65,12 @@ export interface MicProcessingOptions {
   noiseSuppression?: "off" | "low" | "high";
   echoCancellation?: boolean;
   autoGainControl?: boolean;
+  /**
+   * Linear input gain. 1.0 = unity. Anything other than 1 routes the mic
+   * through a Web Audio GainNode pipeline; the AudioContext lives for the
+   * stream's lifetime (no automatic cleanup, but small/cheap).
+   */
+  gain?: number;
 }
 
 /**
@@ -90,5 +96,18 @@ export async function openMicStream(
     audio: audioConstraints,
     video: false,
   };
-  return navigator.mediaDevices.getUserMedia(constraints);
+  const raw = await navigator.mediaDevices.getUserMedia(constraints);
+  const gain = options.gain ?? 1;
+  if (gain === 1) return raw;
+  return applyGain(raw, gain);
+}
+
+function applyGain(stream: MediaStream, gain: number): MediaStream {
+  const ctx = new AudioContext();
+  const source = ctx.createMediaStreamSource(stream);
+  const gainNode = ctx.createGain();
+  gainNode.gain.value = gain;
+  const dest = ctx.createMediaStreamDestination();
+  source.connect(gainNode).connect(dest);
+  return dest.stream;
 }

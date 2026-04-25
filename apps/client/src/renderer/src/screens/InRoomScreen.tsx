@@ -656,6 +656,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
               noiseSuppression: micProcessing.noiseSuppression,
               echoCancellation: micProcessing.echoCancellation,
               autoGainControl: micProcessing.autoGainControl,
+              gain: micProcessing.gain,
             })
           : undefined;
 
@@ -713,6 +714,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     noiseSuppression: s.noiseSuppression,
     echoCancellation: s.echoCancellation,
     autoGainControl: s.autoGainControl,
+    gain: s.micGain,
   }));
   useEffect(() => {
     if (conn.phase === "connected" && prefMic) {

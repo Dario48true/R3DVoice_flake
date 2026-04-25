@@ -48,6 +48,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   const noiseSuppression = usePrefs((s) => s.noiseSuppression);
   const echoCancellation = usePrefs((s) => s.echoCancellation);
   const autoGainControl = usePrefs((s) => s.autoGainControl);
+  const micGain = usePrefs((s) => s.micGain);
 
   const [mics, setMics] = useState<DeviceInfo[]>([]);
   const [speakers, setSpeakers] = useState<DeviceInfo[]>([]);
@@ -67,7 +68,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
     let cancelled = false;
     (async () => {
       try {
-        const stream = await openMicStream(undefined, { noiseSuppression, echoCancellation, autoGainControl });
+        const stream = await openMicStream(undefined, { noiseSuppression, echoCancellation, autoGainControl, gain: micGain });
         stream.getTracks().forEach((t) => t.stop());
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "mic permission denied");
@@ -100,7 +101,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
     let cancelled = false;
     (async () => {
       try {
-        stream = await openMicStream(micDeviceId, { noiseSuppression, echoCancellation, autoGainControl });
+        stream = await openMicStream(micDeviceId, { noiseSuppression, echoCancellation, autoGainControl, gain: micGain });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
