@@ -213,19 +213,107 @@ function DevicesTab(): ReactElement {
       <div className="rv-section-head">
         <span className="rv-label">Processing</span>
       </div>
-      {/* real audio processing toggles wired in Phase 5 T13/T14 */}
-      <Toggle
-        label="Noise suppression"
-        hint="RNNoise · removes keyboard, fans, room echo"
-        defaultChecked
+      <ProcessingControls />
+      <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: "var(--s-2)" }}>
+        Changes apply on the next mic open (rejoin or PTT cycle).
+      </div>
+    </div>
+  );
+}
+
+function ProcessingControls(): ReactElement {
+  const ns = usePrefs((s) => s.noiseSuppression);
+  const ec = usePrefs((s) => s.echoCancellation);
+  const agc = usePrefs((s) => s.autoGainControl);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+      <div>
+        <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Noise suppression</div>
+        <div style={{ display: "inline-flex", padding: 3, background: "var(--bg-elev-3)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)", gap: 2 }}>
+          {(["off", "low", "high"] as const).map((level) => (
+            <button
+              key={level}
+              type="button"
+              onClick={() => prefsActions().setNoiseSuppression(level)}
+              style={{
+                appearance: "none",
+                border: 0,
+                padding: "6px 14px",
+                borderRadius: "calc(var(--r-md) - 3px)",
+                background: ns === level ? "linear-gradient(180deg, var(--accent-hover), var(--accent))" : "transparent",
+                color: ns === level ? "var(--on-accent)" : "var(--text-mid)",
+                fontSize: "var(--t-sm)",
+                fontFamily: "var(--font-mono)",
+                cursor: "pointer",
+              }}
+            >
+              {level}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 4 }}>
+          Off / low / high. Drives WebRTC's NS pass; "high" is most aggressive.
+        </div>
+      </div>
+      <SimpleToggle
+        label="Auto-gain control"
+        hint="Normalize speaking level"
+        value={agc}
+        onChange={(v) => prefsActions().setAutoGainControl(v)}
       />
-      <Toggle label="Auto-gain control" hint="Normalize speaking level" defaultChecked />
-      <Toggle
+      <SimpleToggle
         label="Echo cancellation"
         hint="Required if you use speakers"
-        defaultChecked
+        value={ec}
+        onChange={(v) => prefsActions().setEchoCancellation(v)}
       />
     </div>
+  );
+}
+
+function SimpleToggle({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}): ReactElement {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--s-4)",
+        cursor: "pointer",
+        padding: "10px 0",
+        borderBottom: "1px solid var(--border-soft)",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>{label}</div>
+        {hint && <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 2 }}>{hint}</div>}
+      </div>
+      <span
+        onClick={() => onChange(!value)}
+        style={{
+          width: 36,
+          height: 20,
+          borderRadius: 999,
+          background: value ? "var(--accent)" : "var(--bg-elev-3)",
+          border: "1px solid " + (value ? "color-mix(in oklch, var(--accent) 70%, black)" : "var(--border-strong)"),
+          position: "relative",
+          transition: "all var(--d-base) var(--ease-out)",
+          boxShadow: value ? "0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent)" : "none",
+        }}
+      >
+        <span style={{ position: "absolute", top: 1, left: value ? 17 : 1, width: 16, height: 16, borderRadius: "50%", background: "var(--text)", transition: "left var(--d-base) var(--ease-out)" }} />
+      </span>
+    </label>
   );
 }
 

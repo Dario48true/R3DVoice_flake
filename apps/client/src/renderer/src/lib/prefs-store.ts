@@ -7,6 +7,7 @@ export interface PrefsStorage {
 
 export type Resolution = "720p" | "1080p" | "1440p" | "4K";
 export type FrameRate = 30 | 60;
+export type NoiseSuppressionLevel = "off" | "low" | "high";
 
 export interface PrefsState {
   micDeviceId: string | null;
@@ -22,6 +23,10 @@ export interface PrefsState {
   leaveRoomKeybind: string | null;
   compatibilityMode: boolean;
   crashReporting: boolean;
+  noiseSuppression: NoiseSuppressionLevel;
+  echoCancellation: boolean;
+  autoGainControl: boolean;
+  micGain: number;
   serverUrl: string;
 
   setMicDeviceId(id: string | null): void;
@@ -37,6 +42,10 @@ export interface PrefsState {
   setLeaveRoomKeybind(k: string | null): void;
   setCompatibilityMode(v: boolean): void;
   setCrashReporting(v: boolean): void;
+  setNoiseSuppression(v: NoiseSuppressionLevel): void;
+  setEchoCancellation(v: boolean): void;
+  setAutoGainControl(v: boolean): void;
+  setMicGain(v: number): void;
   setServerUrl(u: string): void;
 }
 
@@ -54,6 +63,10 @@ const DEFAULTS = {
   leaveRoomKeybind: null as string | null,
   compatibilityMode: false,
   crashReporting: false,
+  noiseSuppression: "low" as NoiseSuppressionLevel,
+  echoCancellation: true,
+  autoGainControl: true,
+  micGain: 1.0,
   serverUrl: "https://voice.r3dwolfie.com",
 };
 
@@ -86,6 +99,10 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
       leaveRoomKeybind: state.leaveRoomKeybind,
       compatibilityMode: state.compatibilityMode,
       crashReporting: state.crashReporting,
+      noiseSuppression: state.noiseSuppression,
+      echoCancellation: state.echoCancellation,
+      autoGainControl: state.autoGainControl,
+      micGain: state.micGain,
       serverUrl: state.serverUrl,
     };
     storage.write(JSON.stringify(payload));
@@ -106,6 +123,10 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     setLeaveRoomKeybind: (v) => { set({ leaveRoomKeybind: v }); persistFromState(get()); },
     setCompatibilityMode: (v) => { set({ compatibilityMode: v }); persistFromState(get()); },
     setCrashReporting: (v) => { set({ crashReporting: v }); persistFromState(get()); },
+    setNoiseSuppression: (v) => { set({ noiseSuppression: v }); persistFromState(get()); },
+    setEchoCancellation: (v) => { set({ echoCancellation: v }); persistFromState(get()); },
+    setAutoGainControl: (v) => { set({ autoGainControl: v }); persistFromState(get()); },
+    setMicGain: (v) => { set({ micGain: v }); persistFromState(get()); },
     setServerUrl: (v) => { set({ serverUrl: v }); persistFromState(get()); },
   }));
 }

@@ -652,7 +652,11 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         const { token: lkToken, url } = await api.mintLiveKitToken(props.roomId);
         if (cancelled) return;
         const micStream = props.selection.micDeviceId
-          ? await openMicStream(props.selection.micDeviceId)
+          ? await openMicStream(props.selection.micDeviceId, {
+              noiseSuppression: micProcessing.noiseSuppression,
+              echoCancellation: micProcessing.echoCancellation,
+              autoGainControl: micProcessing.autoGainControl,
+            })
           : undefined;
 
         await roomWrapper.join({
@@ -705,6 +709,11 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
   const pttKeybind = usePrefs((s) => s.pttKeybind);
   const prefMic = usePrefs((s) => s.micDeviceId);
+  const micProcessing = usePrefs((s) => ({
+    noiseSuppression: s.noiseSuppression,
+    echoCancellation: s.echoCancellation,
+    autoGainControl: s.autoGainControl,
+  }));
   useEffect(() => {
     if (conn.phase === "connected" && prefMic) {
       void roomWrapper.room.switchActiveDevice("audioinput", prefMic);

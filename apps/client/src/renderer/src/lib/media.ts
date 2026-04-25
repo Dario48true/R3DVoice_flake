@@ -61,13 +61,33 @@ export function subscribeMicLevel(
   };
 }
 
-/** Ask for mic access and return a stream from the given device. Throws on denial. */
-export async function openMicStream(deviceId: string | undefined): Promise<MediaStream> {
+export interface MicProcessingOptions {
+  noiseSuppression?: "off" | "low" | "high";
+  echoCancellation?: boolean;
+  autoGainControl?: boolean;
+}
+
+/**
+ * Ask for mic access and return a stream from the given device. Throws on denial.
+ * Processing options map onto Chromium's WebRTC audio constraints. "high" pushes
+ * NS hard but stops short of bundling RNNoise — that's a future audio worklet job.
+ */
+export async function openMicStream(
+  deviceId: string | undefined,
+  options: MicProcessingOptions = {},
+): Promise<MediaStream> {
   if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
     throw new Error("mic unavailable");
   }
+  const ns = options.noiseSuppression ?? "low";
+  const audioConstraints: MediaTrackConstraints = {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    noiseSuppression: ns !== "off",
+    echoCancellation: options.echoCancellation ?? true,
+    autoGainControl: options.autoGainControl ?? true,
+  };
   const constraints: MediaStreamConstraints = {
-    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+    audio: audioConstraints,
     video: false,
   };
   return navigator.mediaDevices.getUserMedia(constraints);
