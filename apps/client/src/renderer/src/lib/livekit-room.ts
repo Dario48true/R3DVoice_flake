@@ -5,7 +5,6 @@ import {
   type RemoteParticipant,
   type LocalParticipant,
   Track,
-  type LocalTrackPublication,
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
@@ -16,6 +15,8 @@ export interface RoomStateSnapshot {
   local: LocalParticipant | null;
   remotes: RemoteParticipant[];
   error: string | null;
+  /** True iff the local participant is publishing a screen_share_audio track. */
+  screenShareAudioEnabled: boolean;
 }
 
 export type RoomStateListener = (state: RoomStateSnapshot) => void;
@@ -52,9 +53,6 @@ export class LiveKitRoom {
   // Cached snapshot — useSyncExternalStore compares by reference, so this must
   // stay stable between LiveKit events or React will loop forever.
   private cachedSnapshot: RoomStateSnapshot;
-  // Publication for the filtered screenshare-audio track, when the native
-  // filter is in use. Held so we can unpublish it on leave.
-  private filteredScreenAudioPub: LocalTrackPublication | null = null;
 
   constructor() {
     // dynacast disabled — it changes simulcast layer counts at runtime and
@@ -103,6 +101,9 @@ export class LiveKitRoom {
       local: this.room.localParticipant,
       remotes: Array.from(this.room.remoteParticipants.values()),
       error: this.err,
+      screenShareAudioEnabled: this.room.localParticipant.getTrackPublication(
+        Track.Source.ScreenShareAudio,
+      ) != null,
     };
   }
 
@@ -132,53 +133,85 @@ export class LiveKitRoom {
         await this.room.localParticipant.setMicrophoneEnabled(true);
       }
     }
-    // Publish screenshare
+    // Publish screenshare. We always start the video share with audio:false
+    // and route audio through enableScreenShareAudio() so the toggle works
+    // uniformly whether requested at join time or flipped mid-room.
     if (options.publishScreen) {
       const q = options.screenQuality;
       if (q) {
-        // When the user wants system audio along with the share, try the
-        // native filtered capture first (Windows + helper available). It
-        // captures the system mix EXCLUDING our own process tree, so
-        // remote voices we're playing back don't bleed into the share.
-        // Fall back to the browser's getDisplayMedia({audio:true}) when
-        // the helper isn't available.
-        let filteredAudio: MediaStreamTrack | null = null;
-        if (q.audio) {
-          try {
-            const stream = await startSystemAudioStream();
-            filteredAudio = stream?.getAudioTracks()[0] ?? null;
-          } catch {
-            filteredAudio = null;
-          }
-          // Surface in DevTools so it's easy to confirm the filter activated.
-          // eslint-disable-next-line no-console
-          console.log(
-            filteredAudio
-              ? "[screenshare] system audio filtered via native helper (your voice excluded)"
-              : "[screenshare] system audio NOT filtered — others may hear themselves; use headphones",
-          );
-        }
-
         await this.room.localParticipant.setScreenShareEnabled(true, {
           resolution: { width: q.width, height: q.height, frameRate: q.frameRate },
-          // If we got a filtered audio track, capture video only and we'll
-          // publish the audio separately below. Otherwise let the browser
-          // capture system audio inline (the existing path).
-          audio: q.audio && !filteredAudio,
-          systemAudio: q.audio && !filteredAudio ? "include" : "exclude",
+          audio: false,
           contentHint: "motion",
         });
-
-        if (filteredAudio) {
-          this.filteredScreenAudioPub = await this.room.localParticipant.publishTrack(
-            filteredAudio,
-            { source: Track.Source.ScreenShareAudio },
-          );
+        if (q.audio) {
+          await this.enableScreenShareAudio();
         }
       } else {
         await this.room.localParticipant.setScreenShareEnabled(true);
       }
     }
+  }
+
+  /**
+   * Publish a screen_share_audio track. Tries the native WASAPI filter first
+   * (Windows 11+, excludes RedVoice's own playback so other participants
+   * don't hear themselves through the share). Falls back to a fresh
+   * getDisplayMedia({audio:true,video:false}) browser dialog on platforms
+   * where the filter isn't available.
+   *
+   * Returns true if a track was published (filter or fallback), false if the
+   * user dismissed the fallback dialog or no audio source was available.
+   */
+  async enableScreenShareAudio(): Promise<boolean> {
+    if (this.room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)) {
+      return true;
+    }
+
+    let track: MediaStreamTrack | null = null;
+    try {
+      const stream = await startSystemAudioStream();
+      track = stream?.getAudioTracks()[0] ?? null;
+    } catch { /* */ }
+
+    if (track) {
+      // eslint-disable-next-line no-console
+      console.log("[screenshare] system audio filtered via native helper (your voice excluded)");
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          audio: true,
+          video: false,
+        } as DisplayMediaStreamOptions);
+        track = stream.getAudioTracks()[0] ?? null;
+        // Drop any incidental video track the OS picker forced on us.
+        stream.getVideoTracks().forEach((t) => t.stop());
+        if (track) {
+          // eslint-disable-next-line no-console
+          console.log("[screenshare] system audio NOT filtered — others may hear themselves; use headphones");
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    if (!track) return false;
+
+    await this.room.localParticipant.publishTrack(track, {
+      source: Track.Source.ScreenShareAudio,
+    });
+    this.emit();
+    return true;
+  }
+
+  /** Unpublish the active screen_share_audio track and stop the helper. */
+  async disableScreenShareAudio(): Promise<void> {
+    const pub = this.room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
+    if (pub?.track) {
+      try { await this.room.localParticipant.unpublishTrack(pub.track); } catch { /* */ }
+    }
+    await stopSystemAudioStream();
+    this.emit();
   }
 
   async setMuted(muted: boolean): Promise<void> {
@@ -197,11 +230,7 @@ export class LiveKitRoom {
   }
 
   async leave(): Promise<void> {
-    if (this.filteredScreenAudioPub?.track) {
-      try { await this.room.localParticipant.unpublishTrack(this.filteredScreenAudioPub.track); } catch { /* */ }
-      this.filteredScreenAudioPub = null;
-    }
-    await stopSystemAudioStream();
+    await this.disableScreenShareAudio();
     await this.room.disconnect();
     this.connected = false;
     this.emit();

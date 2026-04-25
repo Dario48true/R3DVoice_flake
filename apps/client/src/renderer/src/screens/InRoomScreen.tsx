@@ -1328,6 +1328,24 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             emphasis={sharing}
             onClick={() => void handleToggleScreen()}
           />
+          {sharing && (
+            <ControlButton
+              icon={<I.Speaker size={20} />}
+              label={snapshot.screenShareAudioEnabled ? "Stop audio" : "Share audio"}
+              active={snapshot.screenShareAudioEnabled}
+              emphasis={snapshot.screenShareAudioEnabled}
+              title={
+                snapshot.screenShareAudioEnabled
+                  ? "Stop sharing system audio with the room"
+                  : "Add system audio to your screen share"
+              }
+              onClick={() =>
+                void (snapshot.screenShareAudioEnabled
+                  ? roomWrapper.disableScreenShareAudio()
+                  : roomWrapper.enableScreenShareAudio())
+              }
+            />
+          )}
           <ControlButton
             icon={cameraOn ? <I.CameraOff size={20} /> : <I.Camera size={20} />}
             label={cameraOn ? "Stop camera" : "Camera"}
