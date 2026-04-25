@@ -142,11 +142,15 @@ function labelForNode(n: Record<string, string>): string {
     .trim();
   const node = n["node.name"]?.trim() ?? "";
 
-  // PipeWire's pipewire-alsa bridge wraps ALSA-using apps as
-  // "ALSA plug-in [<exe>]". Extract the inner exe name — that's what the
-  // user actually recognizes (osu!, wine, etc.).
-  const wrapped = /^(?:ALSA plug-in|JACK|PulseAudio)\s*\[([^\]]+)\]/i.exec(app);
-  if (wrapped?.[1]) {
+  // PipeWire wraps ALSA-using apps under several different prefixes
+  // ("ALSA plug-in", "PipeWire ALSA", "JACK", "PulseAudio") followed by
+  // the bracketed exe name. Pull the inner string out — that's what the
+  // user actually recognizes (osu!, wine games, etc.).
+  const wrapped = /\[([^\]]+)\]\s*$/.exec(app);
+  if (
+    wrapped?.[1] &&
+    /^(?:ALSA plug-in|PipeWire ALSA|JACK|PulseAudio)/i.test(app)
+  ) {
     return wrapped[1].replace(/\.(bin|exe)$/i, "").trim();
   }
 
