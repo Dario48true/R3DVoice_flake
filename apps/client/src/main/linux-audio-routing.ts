@@ -186,31 +186,24 @@ export function listLinuxAudioSources(): AudioSourceSummary[] {
   };
 
   try {
-    const nodes = pb.list([
-      "node.name",
-      "application.name",
-      "application.process.id",
-      "application.process.binary",
-      "application.icon-name",
-      "media.class",
-    ] as const as string[]);
+    // Match Vesktop exactly: list() with default props, no media.class
+    // gate, only drop our own audio service PID. Then layer the friendly
+    // label + dedup + RedVoice filter on top.
+    const nodes = pb.list();
+
+    safeLog(`[linux-audio] venmic returned ${nodes.length} nodes`);
+    if (nodes.length > 0) {
+      // First few full dumps so we can see exactly what fields populate
+      // for ALSA-bridged apps. Trim to keep logs sane.
+      const sample = nodes.slice(0, Math.min(8, nodes.length));
+      for (const n of sample) {
+        safeLog("[linux-audio] node:", JSON.stringify(n));
+      }
+    }
+
     const seen = new Set<string>();
     const out: AudioSourceSummary[] = [];
     for (const n of nodes) {
-      // Skip mic-input streams — we never want to "share" the mic via
-      // screen audio. Everything else (output streams, sinks, ALSA bridge
-      // adapters) stays in. Matches Vesktop's behavior — they don't gate
-      // by media.class either, and that's why they catch osu! / native
-      // games where we previously didn't.
-      if (n["media.class"] === "Stream/Input/Audio") continue;
-      // Hardware devices (Audio/Sink, Audio/Source) leak into the list
-      // when we drop the strict filter. Skip them — the user can't
-      // usefully share "the speakers" as an app, and link() ignores
-      // devices anyway.
-      const cls = n["media.class"] ?? "";
-      if (cls.startsWith("Audio/Sink") || cls.startsWith("Audio/Source")) continue;
-      if (cls === "Audio/Duplex") continue;
-
       if (isRedVoice(n)) continue;
       const label = labelForNode(n);
       if (!label || label === "Unknown") continue;
@@ -226,6 +219,7 @@ export function listLinuxAudioSources(): AudioSourceSummary[] {
         ...(n["application.icon-name"] ? { iconName: n["application.icon-name"] } : {}),
       });
     }
+    safeLog(`[linux-audio] surfacing ${out.length} sources after dedup/filter`);
     return out;
   } catch (err) {
     safeLog("[linux-audio] list() threw:", err);
