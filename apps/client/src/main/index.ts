@@ -7,6 +7,11 @@ import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 import { initAutoUpdate } from "./auto-update.js";
 import { registerSystemAudioCaptureHandlers, stopSystemAudioCapture } from "./system-audio-capture.js";
 import { registerLinuxAudioRoutingHandlers } from "./linux-audio-routing.js";
+import {
+  getInitialWindowBounds,
+  shouldStartMaximized,
+  trackWindowState,
+} from "./window-state.js";
 import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
 import {
   openSplashWindow,
@@ -96,14 +101,12 @@ try {
 
 async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow> {
   const iconPath = resolveIconPath();
-  const primary = screen.getPrimaryDisplay().workArea;
-  const winW = 1200;
-  const winH = 800;
+  const bounds = getInitialWindowBounds();
   const win = new BrowserWindow({
-    width: winW,
-    height: winH,
-    x: primary.x + Math.round((primary.width - winW) / 2),
-    y: primary.y + Math.round((primary.height - winH) / 2),
+    width: bounds.width,
+    height: bounds.height,
+    ...(typeof bounds.x === "number" ? { x: bounds.x } : {}),
+    ...(typeof bounds.y === "number" ? { y: bounds.y } : {}),
     backgroundColor: "#101014",
     show: false, // splash holds the screen until ready-to-show fires
     ...(iconPath && { icon: iconPath }),
@@ -114,6 +117,11 @@ async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow
       sandbox: false,
     },
   });
+
+  trackWindowState(win);
+  if (shouldStartMaximized()) {
+    win.maximize();
+  }
 
   win.once("ready-to-show", () => {
     sendSplashStatus(splash, { phase: "ready" });
