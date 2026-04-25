@@ -78,6 +78,7 @@ export class LiveKitRoom {
     this.room.on(RoomEvent.LocalTrackPublished, () => this.emit());
     this.room.on(RoomEvent.LocalTrackUnpublished, () => this.emit());
     this.room.on(RoomEvent.ConnectionStateChanged, () => this.emit());
+    this.room.on(RoomEvent.ConnectionQualityChanged, () => this.emit());
   }
 
   subscribe(listener: RoomStateListener): () => void {

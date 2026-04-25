@@ -46,6 +46,8 @@ interface ParticipantView {
   isLocal: boolean;
   muted: boolean;
   screenTrack: Track | null;
+  /** LiveKit ConnectionQuality string: "unknown"|"poor"|"good"|"excellent"|"lost". */
+  quality: string;
 }
 
 interface TileCallbacks {
@@ -83,11 +85,6 @@ function fmtTime(s: number): string {
 // Stable 1..5 avatar tone bucket from id.
 function toneOf(id: string): 1 | 2 | 3 | 4 | 5 {
   return ((id.charCodeAt(0) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
-}
-
-// Decorative per-participant latency until Phase 5 T8 wires real network quality.
-function latencyOf(id: string): number {
-  return 30 + (id.charCodeAt(0) % 60);
 }
 
 function findScreenTrack(p: LocalParticipant | RemoteParticipant): Track | null {
@@ -139,12 +136,29 @@ function MiniVu({ active }: { active: boolean }): ReactElement {
   );
 }
 
-function NetMeter({ latency }: { latency: number }): ReactElement {
-  const bars = latency < 50 ? 4 : latency < 100 ? 3 : 2;
-  const tone = latency < 50 ? "var(--rv-live)" : latency < 100 ? "var(--rv-amber)" : "var(--accent)";
+// LiveKit ConnectionQuality enum: "unknown" | "poor" | "good" | "excellent" | "lost".
+// Map to bar-count + tone for the NetMeter visualization.
+function qualityToMeter(quality: string | undefined): { bars: number; tone: string } {
+  switch (quality) {
+    case "excellent":
+      return { bars: 4, tone: "var(--rv-live)" };
+    case "good":
+      return { bars: 3, tone: "var(--rv-live)" };
+    case "poor":
+      return { bars: 2, tone: "var(--rv-amber)" };
+    case "lost":
+      return { bars: 1, tone: "var(--accent)" };
+    default:
+      return { bars: 0, tone: "var(--rv-ink-400)" };
+  }
+}
+
+function NetMeter({ quality, height = 14 }: { quality: string | undefined; height?: number }): ReactElement {
+  const { bars, tone } = qualityToMeter(quality);
+  const sizes = height === 14 ? [6, 9, 12, 15] : [4, 6, 8, 10];
   return (
-    <span style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 14, padding: "0 6px" }}>
-      {[6, 9, 12, 15].map((h, i) => (
+    <span style={{ display: "flex", alignItems: "flex-end", gap: 2, height, padding: "0 4px" }}>
+      {sizes.map((h, i) => (
         <span
           key={i}
           style={{
@@ -353,9 +367,7 @@ function Tile({
         )}
         <span style={{ fontWeight: 500 }}>{tile.name}</span>
         {tile.isLocal && <span style={{ color: "var(--text-faint)" }}>· you</span>}
-        <span className="rv-mono" style={{ color: "var(--text-faint)", fontSize: 9 }}>
-          {latencyOf(tile.id)}ms
-        </span>
+        <NetMeter quality={tile.quality} height={10} />
       </div>
 
       {sharing && (
@@ -760,6 +772,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       isLocal: true,
       muted,
       screenTrack: findScreenTrack(snapshot.local),
+      quality: snapshot.local.connectionQuality ?? "unknown",
     });
   }
   for (const remote of snapshot.remotes as RemoteParticipant[]) {
@@ -770,6 +783,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       isLocal: false,
       muted: isRemoteMuted(remote),
       screenTrack: findScreenTrack(remote),
+      quality: remote.connectionQuality ?? "unknown",
     });
   }
 
@@ -904,7 +918,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             </span>
           ) : (
             <>
-              <NetMeter latency={42} />
+              <NetMeter quality={snapshot.local?.connectionQuality} />
               <span
                 className="rv-mono"
                 style={{ fontSize: "var(--t-2xs)", color: "var(--text-faint)" }}
@@ -1011,10 +1025,16 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
                     </span>
                     <span
                       className="rv-mono"
-                      style={{ fontSize: 10, color: "var(--text-faint)" }}
+                      style={{
+                        fontSize: 10,
+                        color: "var(--text-faint)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
                     >
-                      {tileSharing ? "sharing" : tile.isSpeaking ? "speaking" : "idle"} ·{" "}
-                      {latencyOf(tile.id)}ms
+                      {tileSharing ? "sharing" : tile.isSpeaking ? "speaking" : "idle"}
+                      <NetMeter quality={tile.quality} height={8} />
                     </span>
                   </div>
                   {tile.muted ? (
