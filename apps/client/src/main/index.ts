@@ -5,7 +5,7 @@ import { saveToken, getToken, clearToken } from "./token-store.js";
 import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.js";
 import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 import { initAutoUpdate } from "./auto-update.js";
-import { writeDesktopEntry } from "./desktop-integration.js";
+import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
 
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
@@ -32,10 +32,12 @@ try {
 }
 
 async function createWindow(): Promise<void> {
+  const iconPath = resolveIconPath();
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     backgroundColor: "#101014",
+    ...(iconPath && { icon: iconPath }),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.mjs"),
       contextIsolation: true,

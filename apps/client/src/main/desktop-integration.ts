@@ -3,6 +3,26 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 /**
+ * Best-effort path to a usable window icon.
+ * - Packaged (AppImage): the user-dir icon copied by `writeDesktopEntry`
+ *   from inside the AppImage squashfs.
+ * - Dev: the source `build/icon.png` relative to the compiled main dir.
+ * Returns undefined if nothing resolves — caller should treat as "no icon."
+ */
+export function resolveIconPath(): string | undefined {
+  const userIcon = join(homedir(), ".local/share/icons/hicolor/512x512/apps/redvoice.png");
+  if (existsSync(userIcon)) return userIcon;
+  // Dev fallback. import.meta.dirname = apps/client/out/main at runtime.
+  try {
+    const devIcon = join(import.meta.dirname, "..", "..", "build", "icon.png");
+    if (existsSync(devIcon)) return devIcon;
+  } catch {
+    // import.meta.dirname may be undefined in some contexts
+  }
+  return undefined;
+}
+
+/**
  * electron-builder stores the icon inside the AppImage at
  * `usr/share/icons/hicolor/<size>/apps/<sanitized-package-name>.png`.
  * For scoped names like @redvoice/client it becomes `@redvoiceclient.png`.
