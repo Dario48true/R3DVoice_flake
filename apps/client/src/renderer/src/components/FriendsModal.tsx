@@ -291,13 +291,31 @@ function FriendRow({
         borderBottom: "1px solid var(--border-soft)",
       }}
     >
-      <span
-        className="rv-avatar"
-        data-tone={(friend.user.id.charCodeAt(0) % 5) + 1}
-        style={{ width: 32, height: 32, fontSize: 13 }}
-      >
-        {friend.user.displayName.charAt(0).toUpperCase()}
-      </span>
+      <div style={{ position: "relative", flex: "none" }}>
+        <span
+          className="rv-avatar"
+          data-tone={(friend.user.id.charCodeAt(0) % 5) + 1}
+          style={{ width: 32, height: 32, fontSize: 13 }}
+        >
+          {friend.user.displayName.charAt(0).toUpperCase()}
+        </span>
+        {friend.status === "accepted" && (
+          <span
+            title={friend.isOnline ? "Online" : "Offline"}
+            style={{
+              position: "absolute",
+              right: -2,
+              bottom: -2,
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: friend.isOnline ? "var(--rv-live)" : "var(--rv-ink-400)",
+              border: "2px solid var(--bg-elev)",
+              boxShadow: friend.isOnline ? "0 0 6px var(--rv-live)" : "none",
+            }}
+          />
+        )}
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
         <span style={{ fontWeight: 500, fontSize: "var(--t-sm)" }}>{friend.user.displayName}</span>
         <span

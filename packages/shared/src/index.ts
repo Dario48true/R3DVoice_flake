@@ -128,6 +128,7 @@ export interface FriendDTO {
   friendshipId: string;
   status: FriendStatus;
   user: { id: string; displayName: string; email: string };
+  isOnline: boolean;
   requestedAt: string;
   respondedAt: string | null;
 }

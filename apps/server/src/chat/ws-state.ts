@@ -14,6 +14,32 @@ interface ConnectedSocket {
 
 const subscriptions = new Map<string, Set<ConnectedSocket>>();
 
+// Per-user online presence: userId → set of currently-connected sockets.
+// A user is "online" iff they have at least one open WebSocket. Tracks here
+// so /friends can return isOnline without opening a socket of its own.
+const onlineSockets = new Map<string, Set<ConnectedSocket>>();
+
+export function markOnline(conn: ConnectedSocket): void {
+  let set = onlineSockets.get(conn.userId);
+  if (!set) {
+    set = new Set();
+    onlineSockets.set(conn.userId, set);
+  }
+  set.add(conn);
+}
+
+export function markOffline(conn: ConnectedSocket): void {
+  const set = onlineSockets.get(conn.userId);
+  if (!set) return;
+  set.delete(conn);
+  if (set.size === 0) onlineSockets.delete(conn.userId);
+}
+
+export function isUserOnline(userId: string): boolean {
+  const set = onlineSockets.get(userId);
+  return set !== undefined && set.size > 0;
+}
+
 function key(threadType: ThreadType, threadId: string): string {
   return `${threadType}:${threadId}`;
 }

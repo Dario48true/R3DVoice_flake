@@ -5,7 +5,14 @@ import { verifySessionToken } from "../auth/jwt.js";
 import { getConfig } from "../config.js";
 import { prisma } from "../db.js";
 import { isDmParticipant, isThreadType } from "./threads.js";
-import { subscribe, unsubscribe, unsubscribeAll, type ConnectedSocket } from "./ws-state.js";
+import {
+  subscribe,
+  unsubscribe,
+  unsubscribeAll,
+  markOnline,
+  markOffline,
+  type ConnectedSocket,
+} from "./ws-state.js";
 
 const incomingSchema = z.union([
   z.object({
@@ -54,6 +61,7 @@ export async function chatWsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const conn: ConnectedSocket = { socket: sock, userId };
+    markOnline(conn);
 
     sock.on("message", async (raw: Buffer | ArrayBuffer | Buffer[]) => {
       let payload: unknown;
@@ -86,6 +94,7 @@ export async function chatWsRoutes(app: FastifyInstance): Promise<void> {
 
     sock.on("close", () => {
       unsubscribeAll(conn);
+      markOffline(conn);
     });
 
     // Ack so client knows we're authenticated + ready.

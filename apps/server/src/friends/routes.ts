@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { AuthError, ConflictError, NotFoundError, ValidationError } from "../errors.js";
+import { isUserOnline } from "../chat/ws-state.js";
 
 const sendBodySchema = z.object({ email: z.string().email() });
 const respondParamsSchema = z.object({ id: z.string().min(1) });
@@ -12,6 +13,7 @@ interface FriendDTO {
   friendshipId: string;
   status: "pending-incoming" | "pending-outgoing" | "accepted" | "blocked";
   user: { id: string; displayName: string; email: string };
+  isOnline: boolean;
   requestedAt: string;
   respondedAt: string | null;
 }
@@ -47,6 +49,7 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
           friendshipId: f.id,
           status,
           user: other,
+          isOnline: isUserOnline(other.id),
           requestedAt: f.requestedAt.toISOString(),
           respondedAt: f.respondedAt?.toISOString() ?? null,
         };
