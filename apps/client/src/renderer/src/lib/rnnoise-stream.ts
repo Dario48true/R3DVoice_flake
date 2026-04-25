@@ -138,6 +138,9 @@ export async function applyRnnoise(input: MediaStream): Promise<MediaStream> {
   const destination = ctx.createMediaStreamDestination();
   source.connect(worklet).connect(destination);
 
+  // eslint-disable-next-line no-console
+  console.log("[mic] RNNoise WASM worklet active — denoiser is in the publish chain");
+
   const out = destination.stream;
   activeStreams.set(out, { ctx, source, worklet, destination });
   return out;

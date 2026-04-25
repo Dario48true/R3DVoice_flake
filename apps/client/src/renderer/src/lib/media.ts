@@ -130,6 +130,11 @@ export async function openMicPipeline(
       // eslint-disable-next-line no-console
       console.warn("[mic] RNNoise unavailable; mic will be raw:", err);
     }
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(
+      "[mic] noise suppression OFF — Settings → Mic → Noise suppression is set to 'off'",
+    );
   }
 
   if (options.autoGainControl) {
