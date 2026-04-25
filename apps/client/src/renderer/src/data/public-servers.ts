@@ -17,7 +17,7 @@ export const PUBLIC_SERVERS: PublicServerEntry[] = [
     url: "https://voice.r3dwolfie.com",
     description: "Reference instance run by the project author. Friends + community testers.",
     operator: "R3dWolfie",
-    region: "EU",
+    region: "Asia",
     inviteOnly: false,
   },
 ];
