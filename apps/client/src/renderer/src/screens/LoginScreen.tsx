@@ -65,9 +65,17 @@ export function LoginScreen(): ReactElement {
   const error = useAuthStore((s) => s.error);
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+  const loginTotp = useAuthStore((s) => s.loginTotp);
+  const cancelTotp = useAuthStore((s) => s.cancelTotp);
+  const [totpCode, setTotpCode] = useState("");
 
   async function onSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    if (status === "totp-required") {
+      await loginTotp(totpCode);
+      setTotpCode("");
+      return;
+    }
     if (mode === "login") {
       await login(email, password);
     } else {
@@ -76,6 +84,7 @@ export function LoginScreen(): ReactElement {
   }
 
   const busy = status === "loading";
+  const totpStep = status === "totp-required";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1fr", height: "100%" }}>
@@ -268,7 +277,7 @@ export function LoginScreen(): ReactElement {
             </div>
           </Field>
 
-          {mode === "register" && (
+          {!totpStep && mode === "register" && (
             <Field label="Display name">
               <input
                 className="rv-input"
@@ -283,42 +292,65 @@ export function LoginScreen(): ReactElement {
             </Field>
           )}
 
-          <Field label="Email">
-            <input
-              className="rv-input"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
+          {!totpStep && (
+            <Field label="Email">
+              <input
+                className="rv-input"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </Field>
+          )}
 
-          <Field
-            label="Password"
-            right={
-              mode === "login" ? (
-                <a
-                  href="#"
-                  onClick={(e) => e.preventDefault()}
-                  style={{ color: "var(--text-dim)", fontSize: "var(--t-xs)" }}
-                >
-                  Forgot?
-                </a>
-              ) : null
-            }
-          >
-            <input
-              className="rv-input"
-              type="password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              required
-              minLength={mode === "register" ? 12 : 1}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            {mode === "register" && <div className="rv-field-help">At least 12 characters.</div>}
-          </Field>
+          {!totpStep && (
+            <Field
+              label="Password"
+              right={
+                mode === "login" ? (
+                  <a
+                    href="#"
+                    onClick={(e) => e.preventDefault()}
+                    style={{ color: "var(--text-dim)", fontSize: "var(--t-xs)" }}
+                  >
+                    Forgot?
+                  </a>
+                ) : null
+              }
+            >
+              <input
+                className="rv-input"
+                type="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                required
+                minLength={mode === "register" ? 12 : 1}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              {mode === "register" && <div className="rv-field-help">At least 12 characters.</div>}
+            </Field>
+          )}
+
+          {totpStep && (
+            <Field label="Two-factor code" hint="6 digits from your authenticator app">
+              <input
+                className="rv-input"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="\d{6}"
+                maxLength={6}
+                required
+                autoFocus
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="123456"
+                style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.4em", textAlign: "center" }}
+              />
+            </Field>
+          )}
 
           {error && (
             <div
@@ -339,12 +371,16 @@ export function LoginScreen(): ReactElement {
             className="rv-btn"
             data-variant="primary"
             type="submit"
-            disabled={busy}
+            disabled={busy || (totpStep && totpCode.length !== 6)}
             style={{ height: "2.6rem", marginTop: "var(--s-2)" }}
           >
             {busy ? (
               <>
-                <Spinner /> Connecting…
+                <Spinner /> {totpStep ? "Verifying…" : "Connecting…"}
+              </>
+            ) : totpStep ? (
+              <>
+                Verify <I.Chevron size={16} />
               </>
             ) : (
               <>
@@ -352,6 +388,20 @@ export function LoginScreen(): ReactElement {
               </>
             )}
           </button>
+
+          {totpStep && (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              onClick={() => {
+                setTotpCode("");
+                cancelTotp();
+              }}
+            >
+              Back to sign in
+            </button>
+          )}
 
           <div
             style={{

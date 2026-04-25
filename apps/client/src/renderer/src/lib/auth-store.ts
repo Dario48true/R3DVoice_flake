@@ -8,7 +8,7 @@ export interface AuthStorageAdapter {
   clearToken(): Promise<void>;
 }
 
-type AuthStatus = "unauthenticated" | "loading" | "authenticated";
+type AuthStatus = "unauthenticated" | "loading" | "totp-required" | "authenticated";
 
 export interface AuthState {
   status: AuthStatus;
@@ -16,11 +16,17 @@ export interface AuthState {
   token: string | null;
   serverUrl: string;
   error: string | null;
+  /** Short-lived JWT issued by /auth/login when 2FA is enabled. Sent to /auth/login/totp. */
+  twoFactorToken: string | null;
 
   login(email: string, password: string): Promise<void>;
+  loginTotp(code: string): Promise<void>;
+  cancelTotp(): void;
   register(email: string, password: string, displayName: string): Promise<void>;
   logout(): Promise<void>;
   hydrate(): Promise<void>;
+  /** Re-fetch /me and update the user slot. Used after 2FA toggles, profile edits, etc. */
+  refreshUser(): Promise<void>;
   setServerUrl(url: string): void;
 }
 
@@ -34,20 +40,51 @@ export function createAuthStore(
     status: "unauthenticated",
     user: null,
     token: null,
+    twoFactorToken: null,
     serverUrl: DEFAULT_SERVER_URL,
     error: null,
 
     async login(email, password) {
-      set({ status: "loading", error: null });
+      set({ status: "loading", error: null, twoFactorToken: null });
       try {
-        const { token, user } = await api.login({ email, password });
+        const res = await api.login({ email, password });
+        if ("requiresTotp" in res) {
+          set({ status: "totp-required", twoFactorToken: res.twoFactorToken, error: null });
+          return;
+        }
+        const { token, user } = res;
         api.setToken(token);
         await storage.saveToken(token);
-        set({ status: "authenticated", token, user, error: null });
+        set({ status: "authenticated", token, user, error: null, twoFactorToken: null });
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "login failed";
         set({ status: "unauthenticated", error: message });
       }
+    },
+
+    async loginTotp(code) {
+      const { twoFactorToken } = get();
+      if (!twoFactorToken) {
+        set({ status: "unauthenticated", error: "session expired — please sign in again" });
+        return;
+      }
+      set({ status: "loading", error: null });
+      try {
+        const { token, user } = await api.loginTotp({ twoFactorToken, code });
+        api.setToken(token);
+        await storage.saveToken(token);
+        set({ status: "authenticated", token, user, error: null, twoFactorToken: null });
+      } catch (err) {
+        const message = err instanceof ApiError ? err.message : "two-factor verification failed";
+        // Stay on totp-required so the user can retry; only bail to unauthenticated if the
+        // intent token expired (verifying server returns AUTH error in that case too,
+        // but the inline retry UX is friendlier than yanking them back to login).
+        set({ status: "totp-required", error: message });
+      }
+    },
+
+    cancelTotp() {
+      set({ status: "unauthenticated", twoFactorToken: null, error: null });
     },
 
     async register(email, password, displayName) {
@@ -74,7 +111,7 @@ export function createAuthStore(
       }
       api.setToken(null);
       await storage.clearToken();
-      set({ status: "unauthenticated", token: null, user: null, error: null });
+      set({ status: "unauthenticated", token: null, user: null, error: null, twoFactorToken: null });
     },
 
     async hydrate() {
@@ -92,6 +129,15 @@ export function createAuthStore(
         api.setToken(null);
         await storage.clearToken();
         set({ status: "unauthenticated", token: null, user: null });
+      }
+    },
+
+    async refreshUser() {
+      try {
+        const user = await api.me();
+        set({ user });
+      } catch {
+        // Best-effort refresh — leave existing user state alone on failure.
       }
     },
 

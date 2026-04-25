@@ -2,12 +2,15 @@ import type {
   AuthResponse,
   CreateRoomRequest,
   LoginRequest,
+  LoginResponse,
   RegisterRequest,
   RoomDTO,
   RoomListResponse,
   UserDTO,
   LiveKitTokenResponse,
   ErrorResponse,
+  TotpVerifyRequest,
+  TotpEnrollStartResponse,
 } from "@redvoice/shared";
 
 export class ApiError extends Error {
@@ -83,14 +86,26 @@ export class ApiClient {
   register(body: RegisterRequest): Promise<AuthResponse> {
     return this.request("POST", "/auth/register", body);
   }
-  login(body: LoginRequest): Promise<AuthResponse> {
+  login(body: LoginRequest): Promise<LoginResponse> {
     return this.request("POST", "/auth/login", body);
+  }
+  loginTotp(body: TotpVerifyRequest): Promise<AuthResponse> {
+    return this.request("POST", "/auth/login/totp", body);
   }
   logout(): Promise<void> {
     return this.request("POST", "/auth/logout");
   }
   me(): Promise<UserDTO> {
     return this.request("GET", "/me");
+  }
+  twoFAEnrollStart(): Promise<TotpEnrollStartResponse> {
+    return this.request("POST", "/auth/2fa/enroll-start");
+  }
+  twoFAEnrollVerify(code: string): Promise<{ enabled: true }> {
+    return this.request("POST", "/auth/2fa/enroll-verify", { code });
+  }
+  twoFADisable(password: string): Promise<{ enabled: false }> {
+    return this.request("POST", "/auth/2fa/disable", { password });
   }
 
   // Rooms

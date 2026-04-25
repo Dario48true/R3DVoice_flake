@@ -4,9 +4,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getConfig } from "../config.js";
 import { hashPassword, verifyPassword } from "./password.js";
-import { signSessionToken } from "./jwt.js";
+import { signSessionToken, signTwoFactorToken, verifyTwoFactorToken } from "./jwt.js";
 import { requireAuth } from "./middleware.js";
 import { AuthError, ConflictError, ValidationError } from "../errors.js";
+import { buildOtpAuthUrl, buildQrDataUrl, generateTotpSecret, verifyTotpCode } from "./totp.js";
 
 const registerBodySchema = z.object({
   email: z.string().email(),
@@ -74,6 +75,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw new AuthError("invalid credentials");
     }
 
+    // 2FA gate: if enrolled, return a short-lived intent token instead of a session.
+    if (user.totpEnabledAt && user.totpSecret) {
+      const twoFactorToken = signTwoFactorToken(
+        { userId: user.id, intent: "totp" },
+        getConfig().JWT_SECRET,
+      );
+      reply.status(200).send({ requiresTotp: true, twoFactorToken });
+      return;
+    }
+
     const session = await prisma.session.create({ data: { userId: user.id } });
     const token = signSessionToken(
       { userId: user.id, sessionId: session.id },
@@ -85,10 +96,49 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  app.post(
+    "/auth/login/totp",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      const parsed = totpVerifyBodySchema.safeParse(request.body);
+      if (!parsed.success) throw new ValidationError("invalid input");
+      const { twoFactorToken, code } = parsed.data;
+
+      let claims;
+      try {
+        claims = verifyTwoFactorToken(twoFactorToken, getConfig().JWT_SECRET);
+      } catch {
+        throw new AuthError("invalid or expired two-factor token");
+      }
+      const user = await prisma.user.findUnique({ where: { id: claims.userId } });
+      if (!user || !user.totpSecret) throw new AuthError("invalid credentials");
+      if (!verifyTotpCode(user.totpSecret, code)) {
+        throw new AuthError("invalid two-factor code");
+      }
+
+      const session = await prisma.session.create({ data: { userId: user.id } });
+      const token = signSessionToken(
+        { userId: user.id, sessionId: session.id },
+        getConfig().JWT_SECRET,
+      );
+      reply.status(200).send({
+        token,
+        user: { id: user.id, email: user.email, displayName: user.displayName },
+      });
+    },
+  );
+
   app.get("/me", { preHandler: requireAuth }, async (request) => {
     const user = await prisma.user.findUnique({ where: { id: request.auth!.userId } });
     if (!user) throw new AuthError("user not found");
-    return { id: user.id, email: user.email, displayName: user.displayName };
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      totpEnabled: user.totpEnabledAt !== null,
+    };
   });
 
   app.post("/auth/logout", { preHandler: requireAuth }, async (request, reply) => {
@@ -98,4 +148,73 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
     reply.status(204).send();
   });
+
+  // 2FA: start enrollment — generates a secret + QR. The secret is staged on the
+  // user but `totpEnabledAt` stays null until enrollVerify confirms a working code.
+  app.post(
+    "/auth/2fa/enroll-start",
+    { preHandler: requireAuth },
+    async (request) => {
+      const user = await prisma.user.findUnique({ where: { id: request.auth!.userId } });
+      if (!user) throw new AuthError("user not found");
+      if (user.totpEnabledAt) {
+        throw new ConflictError("2FA already enabled — disable first to re-enroll");
+      }
+      const secret = generateTotpSecret();
+      await prisma.user.update({ where: { id: user.id }, data: { totpSecret: secret } });
+      const otpAuthUrl = buildOtpAuthUrl(user.email, secret);
+      const qrDataUrl = await buildQrDataUrl(otpAuthUrl);
+      return { secret, otpAuthUrl, qrDataUrl };
+    },
+  );
+
+  app.post(
+    "/auth/2fa/enroll-verify",
+    { preHandler: requireAuth },
+    async (request) => {
+      const parsed = totpEnrollVerifyBodySchema.safeParse(request.body);
+      if (!parsed.success) throw new ValidationError("invalid input");
+      const user = await prisma.user.findUnique({ where: { id: request.auth!.userId } });
+      if (!user || !user.totpSecret) throw new AuthError("no enrollment in progress");
+      if (!verifyTotpCode(user.totpSecret, parsed.data.code)) {
+        throw new AuthError("invalid two-factor code");
+      }
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { totpEnabledAt: new Date() },
+      });
+      return { enabled: true };
+    },
+  );
+
+  app.post(
+    "/auth/2fa/disable",
+    { preHandler: requireAuth },
+    async (request) => {
+      const parsed = totpDisableBodySchema.safeParse(request.body);
+      if (!parsed.success) throw new ValidationError("invalid input");
+      const user = await prisma.user.findUnique({ where: { id: request.auth!.userId } });
+      if (!user) throw new AuthError("user not found");
+      const ok = await verifyPassword(parsed.data.password, user.passwordHash);
+      if (!ok) throw new AuthError("invalid password");
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { totpSecret: null, totpEnabledAt: null },
+      });
+      return { enabled: false };
+    },
+  );
 }
+
+const totpVerifyBodySchema = z.object({
+  twoFactorToken: z.string().min(1),
+  code: z.string().min(6).max(8),
+});
+
+const totpEnrollVerifyBodySchema = z.object({
+  code: z.string().min(6).max(8),
+});
+
+const totpDisableBodySchema = z.object({
+  password: z.string().min(1),
+});

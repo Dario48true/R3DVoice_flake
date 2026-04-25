@@ -15,10 +15,30 @@ export interface AuthResponse {
   user: UserDTO;
 }
 
+/** /auth/login response when the user has 2FA enabled. */
+export interface TotpRequiredResponse {
+  requiresTotp: true;
+  twoFactorToken: string;
+}
+
+export type LoginResponse = AuthResponse | TotpRequiredResponse;
+
+export interface TotpVerifyRequest {
+  twoFactorToken: string;
+  code: string;
+}
+
+export interface TotpEnrollStartResponse {
+  secret: string;
+  otpAuthUrl: string;
+  qrDataUrl: string;
+}
+
 export interface UserDTO {
   id: string;
   email: string;
   displayName: string;
+  totpEnabled?: boolean;
 }
 
 // Room DTOs

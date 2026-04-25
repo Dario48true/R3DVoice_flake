@@ -10,6 +10,7 @@ import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import { MOD_KEY, SHIFT_KEY } from "../lib/platform.js";
 import type { MediaPermissionStatus } from "../../../shared/bridge-types.js";
 import { useAuthStore } from "../lib/auth-context.js";
+import { ApiClient } from "../lib/api.js";
 import { I } from "./Icons.js";
 import { Modal } from "./Modal.js";
 import { Field } from "./Primitives.js";
@@ -868,6 +869,8 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
     onClose();
   };
 
+  const totpEnabled = user?.totpEnabled === true;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", maxWidth: 480 }}>
       <div className="rv-section-head">
@@ -921,6 +924,11 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
       </div>
 
       <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
+        <span className="rv-label">Two-factor auth</span>
+      </div>
+      <TwoFactorSection enabled={totpEnabled} />
+
+      <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
         <span className="rv-label">Actions</span>
       </div>
       {!confirming ? (
@@ -967,6 +975,249 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
               Cancel
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TwoFactorSection({ enabled }: { enabled: boolean }): ReactElement {
+  const serverUrl = useAuthStore((s) => s.serverUrl);
+  const token = useAuthStore((s) => s.token);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
+
+  const [phase, setPhase] = useState<"idle" | "enrolling" | "disabling">("idle");
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const apiFor = (): ApiClient => {
+    const api = new ApiClient(serverUrl);
+    api.setToken(token);
+    return api;
+  };
+
+  const startEnroll = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFor().twoFAEnrollStart();
+      setSecret(res.secret);
+      setQrDataUrl(res.qrDataUrl);
+      setPhase("enrolling");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "failed to start enrollment");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyEnroll = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFor().twoFAEnrollVerify(code);
+      await refreshUser();
+      setPhase("idle");
+      setQrDataUrl(null);
+      setSecret(null);
+      setCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "verification failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startDisable = (): void => {
+    setPhase("disabling");
+    setError(null);
+  };
+
+  const confirmDisable = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFor().twoFADisable(password);
+      await refreshUser();
+      setPhase("idle");
+      setPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "disable failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancel = (): void => {
+    setPhase("idle");
+    setQrDataUrl(null);
+    setSecret(null);
+    setCode("");
+    setPassword("");
+    setError(null);
+  };
+
+  return (
+    <div
+      style={{
+        padding: "var(--s-4)",
+        background: "var(--bg-elev-2)",
+        border: "1px solid var(--border-soft)",
+        borderRadius: "var(--r-md)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-3)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>
+            Authenticator app (TOTP)
+          </div>
+          <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 2 }}>
+            {enabled
+              ? "Enabled. You'll be asked for a code on each sign-in."
+              : "Off. Add a layer with Google Authenticator, Authy, 1Password, etc."}
+          </div>
+        </div>
+        <span className="rv-badge" data-tone={enabled ? "live" : undefined}>
+          {enabled && <span className="pip" />}
+          {enabled ? "enabled" : "disabled"}
+        </span>
+      </div>
+
+      {phase === "idle" && (
+        <div style={{ display: "flex", gap: "var(--s-2)" }}>
+          {!enabled ? (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="primary"
+              onClick={() => void startEnroll()}
+              disabled={busy}
+            >
+              Enable 2FA
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              onClick={startDisable}
+            >
+              Disable 2FA
+            </button>
+          )}
+        </div>
+      )}
+
+      {phase === "enrolling" && qrDataUrl && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+          <div style={{ fontSize: "var(--t-xs)", color: "var(--text-mid)", lineHeight: 1.5 }}>
+            Scan this QR with your authenticator app, then enter the 6-digit code below to confirm.
+          </div>
+          <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "flex-start" }}>
+            <img
+              src={qrDataUrl}
+              alt="2FA QR code"
+              style={{
+                width: 160,
+                height: 160,
+                background: "white",
+                borderRadius: "var(--r-sm)",
+                border: "1px solid var(--border)",
+              }}
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 }}>
+              <span className="rv-label">Or enter manually</span>
+              <code
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--t-xs)",
+                  padding: "6px 8px",
+                  background: "var(--bg-elev-3)",
+                  borderRadius: 4,
+                  wordBreak: "break-all",
+                  color: "var(--text)",
+                }}
+              >
+                {secret}
+              </code>
+            </div>
+          </div>
+          <input
+            className="rv-input"
+            type="text"
+            inputMode="numeric"
+            pattern="\d{6}"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, ""))}
+            placeholder="123456"
+            style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.4em", textAlign: "center" }}
+          />
+          <div style={{ display: "flex", gap: "var(--s-2)" }}>
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="primary"
+              disabled={busy || code.length !== 6}
+              onClick={() => void verifyEnroll()}
+            >
+              Verify + enable
+            </button>
+            <button type="button" className="rv-btn" data-variant="ghost" onClick={cancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === "disabling" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+          <div style={{ fontSize: "var(--t-xs)", color: "var(--text-mid)", lineHeight: 1.5 }}>
+            Confirm with your password to disable 2FA on this account.
+          </div>
+          <input
+            className="rv-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Current password"
+          />
+          <div style={{ display: "flex", gap: "var(--s-2)" }}>
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="primary"
+              disabled={busy || !password}
+              onClick={() => void confirmDisable()}
+            >
+              Confirm disable
+            </button>
+            <button type="button" className="rv-btn" data-variant="ghost" onClick={cancel}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            color: "var(--accent-glow)",
+            fontSize: "var(--t-xs)",
+            padding: "var(--s-2) var(--s-3)",
+            border: "1px solid color-mix(in oklch, var(--accent) 40%, transparent)",
+            borderRadius: "var(--r-sm)",
+            background: "color-mix(in oklch, var(--accent) 8%, var(--bg-elev-2))",
+          }}
+        >
+          {error}
         </div>
       )}
     </div>
