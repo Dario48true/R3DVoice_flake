@@ -39,6 +39,24 @@ function Speaker({ size = 18, style, className }: IconProps): ReactElement {
   );
 }
 
+function Info({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-5" />
+      <path d="M12 8.01l.01-.011" />
+    </svg>
+  );
+}
+
+function StarFilled({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+
 function Screen({ size = 18, style, className }: IconProps): ReactElement {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
@@ -325,4 +343,6 @@ export const I = {
   Camera,
   CameraOff,
   Logo,
+  Info,
+  StarFilled,
 };

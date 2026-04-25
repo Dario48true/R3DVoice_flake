@@ -22,7 +22,7 @@ import {
 } from "../lib/livekit-room.js";
 import type { PreJoinSelection } from "./PreJoinScreen.js";
 import { SettingsModal } from "../components/SettingsModal.js";
-import { usePrefs } from "../lib/prefs-singleton.js";
+import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
@@ -136,6 +136,9 @@ function isRemoteMuted(p: RemoteParticipant): boolean {
 }
 
 function MiniVu({ active }: { active: boolean }): ReactElement {
+  // Off state: 4 flat bars (no animation, no varying height) — communicates
+  // "mic on, not speaking" without distracting motion.
+  // On state: varying heights with the live-pulse animation.
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 14 }}>
       {[0.4, 0.7, 1, 0.55].map((h, i) => (
@@ -143,7 +146,7 @@ function MiniVu({ active }: { active: boolean }): ReactElement {
           key={i}
           style={{
             width: 2,
-            height: `${h * 100}%`,
+            height: active ? `${h * 100}%` : "20%",
             background: active ? "var(--rv-live)" : "var(--rv-ink-400)",
             borderRadius: 1,
             animation: active ? `rv-vu-bar 0.${6 + i}s ease-in-out infinite alternate` : "none",
@@ -794,6 +797,8 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   }, [prefMic, conn.phase, roomWrapper]);
 
   const prefSpeaker = usePrefs((s) => s.speakerDeviceId);
+  const favoriteRoomIds = usePrefs((s) => s.favoriteRoomIds);
+  const isFavorite = favoriteRoomIds.includes(props.roomId);
   useEffect(() => {
     if (conn.phase === "connected" && prefSpeaker) {
       void roomWrapper.room.switchActiveDevice("audiooutput", prefSpeaker);
@@ -996,7 +1001,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   }
 
   const localDisplayName = user?.displayName ?? snapshot.local?.name ?? snapshot.local?.identity ?? "You";
-  const localAvatarChar = (localDisplayName.charAt(0) || "?").toUpperCase();
 
   return (
     <div
@@ -1017,12 +1021,24 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
           <I.Logo size={20} />
           <span className="rv-label">IN ROOM</span>
-          <span className="rv-mono" style={{ color: "var(--text-mid)", fontSize: "var(--t-xs)" }}>
-            {props.roomId.slice(0, 8)}…
-          </span>
           <span className="rv-badge" data-tone="live">
             <span className="pip" /> LIVE · {fmtTime(elapsed)}
           </span>
+          <button
+            className="rv-btn rv-btn-icon"
+            data-variant="ghost"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => prefsActions().toggleFavoriteRoom(props.roomId)}
+            title={isFavorite ? "Unfavorite this room" : "Favorite this room"}
+            data-active={isFavorite}
+            style={{ padding: "0 var(--s-2)" }}
+          >
+            {isFavorite ? (
+              <I.StarFilled size={14} style={{ color: "var(--rv-amber)" }} />
+            ) : (
+              <I.Star size={14} style={{ color: "var(--text-mid)" }} />
+            )}
+          </button>
           <button
             className="rv-btn rv-btn-icon"
             data-variant="ghost"
@@ -1032,7 +1048,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             data-active={roomInfoOpen}
             style={{ padding: "0 var(--s-2)" }}
           >
-            <I.Star size={14} style={{ color: "var(--text-mid)" }} />
+            <I.Info size={14} style={{ color: "var(--text-mid)" }} />
           </button>
         </div>
 
@@ -1218,35 +1234,32 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             zIndex: 5,
           }}
         >
-          {(
-            [
-              ["auto", "Auto"],
-              ["grid", "Grid"],
-              ["speaker", "Speaker"],
-            ] as const
-          ).map(([k, v]) => (
-            <button
-              key={k}
-              onClick={() => setLayout(k)}
-              style={{
-                appearance: "none",
-                border: 0,
-                cursor: "pointer",
-                padding: "5px 11px",
-                borderRadius: 5,
-                background:
-                  layout === k
-                    ? "color-mix(in oklch, var(--accent) 18%, var(--bg-elev-2))"
-                    : "transparent",
-                color: layout === k ? "var(--text)" : "var(--text-dim)",
-                fontSize: "var(--t-xs)",
-                fontFamily: "var(--font-mono)",
-                letterSpacing: ".06em",
-              }}
-            >
-              {v}
-            </button>
-          ))}
+          <button
+            onClick={() => {
+              const order: LayoutMode[] = ["auto", "grid", "speaker"];
+              const next = order[(order.indexOf(layout) + 1) % order.length]!;
+              setLayout(next);
+            }}
+            title={`Layout: ${layout} — click to cycle`}
+            style={{
+              appearance: "none",
+              border: 0,
+              cursor: "pointer",
+              padding: "5px 11px",
+              borderRadius: 5,
+              background: "transparent",
+              color: "var(--text-dim)",
+              fontSize: "var(--t-xs)",
+              fontFamily: "var(--font-mono)",
+              letterSpacing: ".06em",
+              textTransform: "uppercase",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <I.Grid size={12} /> {layout}
+          </button>
         </div>
 
         {chatOpen && (
@@ -1334,26 +1347,24 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           alignItems: "center",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
-          <span className="rv-avatar" data-tone={toneOf(snapshot.local?.identity ?? "you")} data-size="lg">
-            {localAvatarChar}
-          </span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontWeight: 500 }}>
-              {localDisplayName} <span style={{ color: "var(--text-faint)" }}>(you)</span>
-            </span>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          {muted && (
             <span
               className="rv-mono"
               style={{
                 fontSize: 10,
-                letterSpacing: ".1em",
+                letterSpacing: ".12em",
                 textTransform: "uppercase",
-                color: muted ? "var(--accent-glow)" : "var(--text-faint)",
+                color: "var(--accent-glow)",
+                padding: "3px 8px",
+                border: "1px solid color-mix(in oklch, var(--accent) 35%, transparent)",
+                borderRadius: 999,
+                background: "color-mix(in oklch, var(--accent) 8%, transparent)",
               }}
             >
-              {muted ? "muted" : sharing ? "sharing" : "live"}
+              ● muted
             </span>
-          </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: "var(--s-3)" }}>

@@ -28,6 +28,8 @@ export interface PrefsState {
   autoGainControl: boolean;
   micGain: number;
   serverUrl: string;
+  /** Room IDs the user has starred — surfaced by future Lobby UX. */
+  favoriteRoomIds: string[];
 
   setMicDeviceId(id: string | null): void;
   setSpeakerDeviceId(id: string | null): void;
@@ -47,6 +49,7 @@ export interface PrefsState {
   setAutoGainControl(v: boolean): void;
   setMicGain(v: number): void;
   setServerUrl(u: string): void;
+  toggleFavoriteRoom(id: string): void;
 }
 
 const DEFAULTS = {
@@ -68,6 +71,7 @@ const DEFAULTS = {
   autoGainControl: true,
   micGain: 1.0,
   serverUrl: "https://voice.r3dwolfie.com",
+  favoriteRoomIds: [] as string[],
 };
 
 function load(storage: PrefsStorage): typeof DEFAULTS {
@@ -104,6 +108,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
       autoGainControl: state.autoGainControl,
       micGain: state.micGain,
       serverUrl: state.serverUrl,
+      favoriteRoomIds: state.favoriteRoomIds,
     };
     storage.write(JSON.stringify(payload));
   }
@@ -128,6 +133,14 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     setAutoGainControl: (v) => { set({ autoGainControl: v }); persistFromState(get()); },
     setMicGain: (v) => { set({ micGain: v }); persistFromState(get()); },
     setServerUrl: (v) => { set({ serverUrl: v }); persistFromState(get()); },
+    toggleFavoriteRoom: (id) => {
+      const { favoriteRoomIds } = get();
+      const next = favoriteRoomIds.includes(id)
+        ? favoriteRoomIds.filter((x) => x !== id)
+        : [...favoriteRoomIds, id];
+      set({ favoriteRoomIds: next });
+      persistFromState(get());
+    },
   }));
 }
 
