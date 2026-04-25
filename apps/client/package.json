@@ -1,6 +1,6 @@
 {
   "name": "@redvoice/client",
-  "version": "0.4.18",
+  "version": "0.4.19",
   "private": true,
   "description": "RedVoice – low-latency voice/video communication for gamers",
   "author": {

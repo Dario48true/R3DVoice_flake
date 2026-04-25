@@ -16,7 +16,8 @@
 // which app to share audio from (Discord/Vesktop UX).
 
 import { app, ipcMain } from "electron";
-import type { PatchBay as PatchBayType, LinkData } from "@vencord/venmic";
+import { basename } from "node:path";
+import type { PatchBay as PatchBayType, LinkData, Node } from "@vencord/venmic";
 
 let PatchBay: typeof PatchBayType | null = null;
 let patchBay: PatchBayType | null = null;
@@ -61,8 +62,39 @@ function getRendererAudioServicePid(): string | null {
   // utility process. Excluding its PID from venmic keeps RedVoice's own
   // playback (incoming call voices) out of the virtual capture device.
   const procs = app.getAppMetrics();
-  const audio = procs.find((p) => p.name === "Audio Service");
+  const audio = procs.find(
+    (p) => p.name === "Audio Service" || p.name === "Utility: Audio Service",
+  );
   return audio?.pid?.toString() ?? null;
+}
+
+function getRedVoiceExcludeRules(): Node[] {
+  // Match any audio stream whose origin is a RedVoice process — by PID,
+  // by binary name, by app name, by node name. PipeWire reports different
+  // facets for different streams (renderer vs Audio Service vs main), and a
+  // miss anywhere means the user's own playback bleeds back into the share.
+  // Each rule is OR'd by venmic, so adding more is strictly safer.
+  const rules: Node[] = [];
+
+  const audioPid = getRendererAudioServicePid();
+  if (audioPid) rules.push({ "application.process.id": audioPid });
+  rules.push({ "application.process.id": String(process.pid) });
+
+  // Process binary name (executableName: "redvoice" per electron-builder.yml).
+  // Match BOTH the dynamic execPath and the literal name in case the AppImage
+  // mounts under a different basename.
+  const execName = basename(process.execPath).toLowerCase();
+  if (execName) rules.push({ "application.process.binary": execName });
+  rules.push({ "application.process.binary": "redvoice" });
+
+  // App name (app.setName("RedVoice")) and casing variants PipeWire might use.
+  rules.push({ "application.name": "RedVoice" });
+  rules.push({ "application.name": app.getName() });
+
+  // Skip mic-input streams entirely so we never accidentally re-capture them.
+  rules.push({ "media.class": "Stream/Input/Audio" });
+
+  return rules;
 }
 
 function safeLog(...args: unknown[]): void {
@@ -147,24 +179,21 @@ export function enableLinuxAudioRouting(options: EnableOptions = {}): EnableResu
   // Re-link if we're already linked but the caller wants a different scope —
   // PatchBay.link() replaces the existing graph wiring atomically.
 
-  const audioPid = getRendererAudioServicePid();
-  if (!audioPid) {
-    safeLog("[linux-audio] couldn't locate Audio Service PID; aborting to avoid self-capture");
+  const excludeRules = getRedVoiceExcludeRules();
+  if (excludeRules.length === 0) {
+    safeLog("[linux-audio] no exclude rules derivable; aborting to avoid self-capture");
     return null;
   }
 
   const data: LinkData = options.includeProcessId
     ? {
         include: [{ "application.process.id": options.includeProcessId }],
-        exclude: [{ "application.process.id": audioPid }],
+        exclude: excludeRules,
         ignore_devices: true,
       }
     : {
         include: [],
-        exclude: [
-          { "application.process.id": audioPid },
-          { "media.class": "Stream/Input/Audio" },
-        ],
+        exclude: excludeRules,
         only_speakers: true,
         ignore_devices: true,
       };
@@ -178,7 +207,9 @@ export function enableLinuxAudioRouting(options: EnableOptions = {}): EnableResu
     linked = true;
     safeLog(
       "[linux-audio] venmic linked —",
-      options.includeProcessId ? `including PID ${options.includeProcessId}` : `excluding PID ${audioPid}`,
+      options.includeProcessId
+        ? `including PID ${options.includeProcessId}`
+        : `excluding ${excludeRules.length} RedVoice rules`,
     );
     return { monitorDeviceDescription: "vencord-screen-share" };
   } catch (err) {

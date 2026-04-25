@@ -47,6 +47,23 @@ export interface JoinOptions {
 }
 
 /**
+ * Conservative max bitrate for screenshare publish. Keeps the sender from
+ * overshooting typical home upload bandwidth (~5–10 Mbps) — encoder degrades
+ * quality smoothly under cap instead of dropping frames.
+ */
+function computeScreenShareBitrate(width: number, height: number, fps: number): number {
+  const pixels = width * height;
+  let base: number;
+  if (pixels >= 3840 * 2160) base = 5_000_000; // 4K
+  else if (pixels >= 2560 * 1440) base = 3_000_000; // 1440p
+  else if (pixels >= 1920 * 1080) base = 2_000_000; // 1080p
+  else base = 1_000_000; // 720p and below
+  // 60 fps roughly doubles motion-area cost; mild bump above 30 fps.
+  const fpsScale = fps > 30 ? 1.5 : 1;
+  return Math.round(base * fpsScale);
+}
+
+/**
  * Linux: capture screenshare audio. Two paths:
  *
  * 1. If `preferLabelContains` matches a virtual venmic device (e.g.
@@ -198,11 +215,26 @@ export class LiveKitRoom {
     if (options.publishScreen) {
       const q = options.screenQuality;
       if (q) {
-        await this.room.localParticipant.setScreenShareEnabled(true, {
-          resolution: { width: q.width, height: q.height, frameRate: q.frameRate },
-          audio: false,
-          contentHint: "motion",
-        });
+        await this.room.localParticipant.setScreenShareEnabled(
+          true,
+          {
+            resolution: { width: q.width, height: q.height, frameRate: q.frameRate },
+            audio: false,
+            contentHint: "motion",
+          },
+          {
+            // Cap encoder bitrate so we don't overshoot the user's upload
+            // budget. LiveKit's default for screenshare is ~3 Mbps at
+            // 1080p30 / ~4.5 Mbps at 60 fps which causes packet drops on
+            // typical home upload links — choppy playback for everyone
+            // else. Tighter cap → encoder degrades quality smoothly via
+            // WebRTC bandwidth estimation instead of dropping frames.
+            screenShareEncoding: {
+              maxBitrate: computeScreenShareBitrate(q.width, q.height, q.frameRate),
+              maxFramerate: q.frameRate,
+            },
+          },
+        );
         if (q.audio) {
           await this.enableScreenShareAudio();
         }
