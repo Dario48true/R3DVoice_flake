@@ -4,6 +4,8 @@ import rateLimit from "@fastify/rate-limit";
 import { registerErrorHandler } from "./errors.js";
 import { authRoutes } from "./auth/routes.js";
 import { roomRoutes } from "./rooms/routes.js";
+import { chatRoutes } from "./chat/routes.js";
+import { chatWsRoutes } from "./chat/ws.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -28,6 +30,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/health", async () => ({ status: "ok" }));
   await app.register(authRoutes);
   await app.register(roomRoutes);
+  await app.register(chatWsRoutes);
+  await app.register(chatRoutes);
 
   return app;
 }

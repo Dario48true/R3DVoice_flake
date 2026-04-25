@@ -20,6 +20,7 @@ model User {
   sessions      Session[]
   ownedRooms    Room[]           @relation("RoomOwner")
   memberships   RoomMembership[]
+  messages      Message[]
 }
 
 model Session {
@@ -55,4 +56,28 @@ model RoomMembership {
 
   @@id([userId, roomId])
   @@index([roomId])
+}
+
+// Polymorphic chat message — backs both per-room chat and 1:1 DMs.
+//
+// threadType is "room" or "dm".
+//   room: threadId = roomId (FK semantics enforced in handler, not at DB level
+//         since the Room → Message relation is loose: Messages outlive Rooms
+//         being deleted only by cascade through application logic, not Prisma).
+//   dm:   threadId = canonical pair "<smaller-uuid>:<larger-uuid>" so both
+//         participants resolve the same thread.
+model Message {
+  id         String   @id @default(uuid())
+  threadType String   // "room" | "dm"
+  threadId   String
+  authorId   String
+  body       String
+  createdAt  DateTime @default(now())
+  editedAt   DateTime?
+  deletedAt  DateTime?
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([threadType, threadId, createdAt])
+  @@index([authorId])
 }

@@ -67,6 +67,60 @@ export interface LiveKitTokenResponse {
   roomId: string;
 }
 
+// Chat DTOs
+export type ChatThreadType = "room" | "dm";
+
+export interface ChatMessageDTO {
+  id: string;
+  threadType: ChatThreadType;
+  threadId: string;
+  authorId: string;
+  authorName: string;
+  /** null when soft-deleted */
+  body: string | null;
+  createdAt: string; // ISO 8601
+  editedAt: string | null;
+  deletedAt: string | null;
+}
+
+export interface ChatHistoryResponse {
+  messages: ChatMessageDTO[];
+}
+
+export interface ChatSendRequest {
+  threadType: ChatThreadType;
+  threadId: string;
+  body: string;
+}
+
+export interface ChatSendResponse {
+  message: ChatMessageDTO;
+}
+
+export interface DmThreadEntry {
+  threadId: string;
+  lastMessage: ChatMessageDTO;
+}
+
+export interface DmThreadsResponse {
+  threads: DmThreadEntry[];
+}
+
+/** Server → client WebSocket events. */
+export type ChatWsEvent =
+  | { type: "ready"; userId: string }
+  | { type: "message"; message: ChatMessageDTO }
+  | { type: "edited"; message: ChatMessageDTO }
+  | { type: "deleted"; id: string; threadType: ChatThreadType; threadId: string }
+  | { type: "pong" }
+  | { type: "error"; code: string; threadId?: string };
+
+/** Client → server WebSocket frames. */
+export type ChatWsCommand =
+  | { type: "subscribe"; threadType: ChatThreadType; threadId: string }
+  | { type: "unsubscribe"; threadType: ChatThreadType; threadId: string }
+  | { type: "ping" };
+
 // Error shape returned on any non-2xx
 export interface ErrorResponse {
   error: {

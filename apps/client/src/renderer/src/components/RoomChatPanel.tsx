@@ -1,40 +1,94 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import type { LiveKitRoom } from "../lib/livekit-room.js";
+import type { ChatMessageDTO } from "@redvoice/shared";
+import { ApiClient } from "../lib/api.js";
+import { ChatTransport } from "../lib/chat-transport.js";
+import { useAuthStore } from "../lib/auth-context.js";
 import { I } from "./Icons.js";
 
-interface ChatMessage {
-  id: string;
-  from: string;
-  fromName: string;
-  text: string;
-  ts: number;
-  local: boolean;
-}
-
 interface Props {
-  room: LiveKitRoom;
+  threadType: "room" | "dm";
+  threadId: string;
   localIdentity: string;
   localName: string;
   onClose(): void;
 }
 
-// Small ephemeral chat panel powered by LiveKit DataChannel. Persistence comes
-// in P5 T20 — the renderer surface stays the same; only the transport swaps.
-export function RoomChatPanel({ room, localIdentity, localName, onClose }: Props): ReactElement {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+// Persistent chat panel backed by REST + WebSocket (P5 T20).
+// LiveKit DataChannel is no longer the transport — every message round-trips
+// through the server so it shows up in the user's history regardless of
+// whether they were online when sent.
+export function RoomChatPanel({
+  threadType,
+  threadId,
+  localIdentity,
+  localName,
+  onClose,
+}: Props): ReactElement {
+  const serverUrl = useAuthStore((s) => s.serverUrl);
+  const token = useAuthStore((s) => s.token);
+
+  const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [draft, setDraft] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const apiRef = useRef<ApiClient | null>(null);
+  const transportRef = useRef<ChatTransport | null>(null);
 
+  // Build a thread-scoped API + transport. Re-initialized when the
+  // thread/server/token changes.
   useEffect(() => {
-    return room.onChat((msg) =>
-      setMessages((prev) => [...prev, { ...msg, id: cryptoId() }]),
-    );
-  }, [room]);
+    if (!token) return;
+    const api = new ApiClient(serverUrl);
+    api.setToken(token);
+    apiRef.current = api;
 
-  // Auto-scroll on new message (only if user is near the bottom; don't yank
-  // the scroll if they're reading older context).
+    const transport = new ChatTransport(serverUrl, token, api);
+    transportRef.current = transport;
+
+    let cancelled = false;
+    void api
+      .chatHistory(threadType, threadId, { limit: 50 })
+      .then((res) => {
+        if (!cancelled) setMessages(res.messages);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+
+    const off = transport.on((event) => {
+      if (event.type === "message") {
+        if (event.message.threadType === threadType && event.message.threadId === threadId) {
+          setMessages((prev) => [...prev, event.message]);
+        }
+      } else if (event.type === "edited") {
+        if (event.message.threadType === threadType && event.message.threadId === threadId) {
+          setMessages((prev) => prev.map((m) => (m.id === event.message.id ? event.message : m)));
+        }
+      } else if (event.type === "deleted") {
+        if (event.threadType === threadType && event.threadId === threadId) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === event.id ? { ...m, body: null, deletedAt: new Date().toISOString() } : m)),
+          );
+        }
+      }
+    });
+
+    transport.start();
+    transport.subscribe(threadType, threadId);
+
+    return () => {
+      cancelled = true;
+      off();
+      transport.unsubscribe(threadType, threadId);
+      transport.stop();
+      apiRef.current = null;
+      transportRef.current = null;
+    };
+  }, [serverUrl, token, threadType, threadId]);
+
+  // Auto-scroll on new message (only if user is near the bottom).
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -44,30 +98,32 @@ export function RoomChatPanel({ room, localIdentity, localName, onClose }: Props
 
   const send = async (): Promise<void> => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !apiRef.current) return;
     setDraft("");
     setEmojiOpen(false);
+    setError(null);
     inputRef.current?.focus();
-    // LiveKit DataChannel doesn't echo to sender — append locally so the user
-    // sees their own message immediately.
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: cryptoId(),
-        from: localIdentity,
-        fromName: localName,
-        text,
-        ts: Date.now(),
-        local: true,
-      },
-    ]);
-    await room.sendChat(text);
+    try {
+      // The server broadcasts back over WS so we'll see our own message arrive
+      // there. No local echo needed.
+      await apiRef.current.chatSend({ threadType, threadId, body: text });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "send failed");
+      // Restore draft so the user doesn't lose their text on a network blip.
+      setDraft(text);
+    }
   };
 
   const insertEmoji = (e: string): void => {
     setDraft((d) => d + e);
     inputRef.current?.focus();
   };
+
+  // Reference localIdentity/localName for "you" styling without warnings; both
+  // come from props but we don't need them after the rewrite. Keep around for
+  // future per-author UI tweaks.
+  void localIdentity;
+  void localName;
 
   return (
     <aside
@@ -138,11 +194,23 @@ export function RoomChatPanel({ room, localIdentity, localName, onClose }: Props
             }}
           >
             No messages yet.
-            <br />
-            Persistent history coming in T20.
           </div>
         ) : (
           messages.map((m) => <ChatBubble key={m.id} msg={m} />)
+        )}
+        {error && (
+          <div
+            style={{
+              color: "var(--accent-glow)",
+              fontSize: "var(--t-xs)",
+              padding: "var(--s-2) var(--s-3)",
+              border: "1px solid color-mix(in oklch, var(--accent) 40%, transparent)",
+              borderRadius: "var(--r-sm)",
+              background: "color-mix(in oklch, var(--accent) 8%, var(--bg-elev-2))",
+            }}
+          >
+            {error}
+          </div>
         )}
       </div>
 
@@ -198,11 +266,12 @@ export function RoomChatPanel({ room, localIdentity, localName, onClose }: Props
   );
 }
 
-function ChatBubble({ msg }: { msg: ChatMessage }): ReactElement {
-  const time = new Date(msg.ts).toLocaleTimeString(undefined, {
+function ChatBubble({ msg }: { msg: ChatMessageDTO }): ReactElement {
+  const time = new Date(msg.createdAt).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
   });
+  const deleted = msg.deletedAt !== null || msg.body === null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <div
@@ -213,22 +282,24 @@ function ChatBubble({ msg }: { msg: ChatMessage }): ReactElement {
           fontSize: "var(--t-xs)",
         }}
       >
-        <span style={{ fontWeight: 600, color: msg.local ? "var(--accent-glow)" : "var(--text)" }}>
-          {msg.fromName}
-        </span>
+        <span style={{ fontWeight: 600, color: "var(--text)" }}>{msg.authorName}</span>
         <span className="rv-mono" style={{ color: "var(--text-faint)", fontSize: "var(--t-2xs)" }}>
           {time}
         </span>
+        {msg.editedAt && !deleted && (
+          <span style={{ color: "var(--text-faint)", fontSize: "var(--t-2xs)" }}>(edited)</span>
+        )}
       </div>
       <div
         style={{
           fontSize: "var(--t-sm)",
-          color: "var(--text-mid)",
+          color: deleted ? "var(--text-faint)" : "var(--text-mid)",
           wordBreak: "break-word",
           lineHeight: 1.4,
+          fontStyle: deleted ? "italic" : "normal",
         }}
       >
-        {msg.text}
+        {deleted ? "(deleted)" : msg.body}
       </div>
     </div>
   );
@@ -282,7 +353,3 @@ function EmojiPicker({ onPick }: { onPick: (e: string) => void }): ReactElement 
   );
 }
 
-function cryptoId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return Math.random().toString(36).slice(2);
-}

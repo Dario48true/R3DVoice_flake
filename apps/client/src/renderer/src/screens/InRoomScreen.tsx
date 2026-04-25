@@ -1217,7 +1217,8 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
         {chatOpen && (
           <RoomChatPanel
-            room={roomWrapper}
+            threadType="room"
+            threadId={props.roomId}
             localIdentity={snapshot.local?.identity ?? "you"}
             localName={localDisplayName}
             onClose={() => setChatOpen(false)}
