@@ -523,7 +523,86 @@ function CompatTab(): ReactElement {
         <span className="rv-label">Permissions</span>
       </div>
       <PermissionRows />
+
+      <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
+        <span className="rv-label">Privacy</span>
+      </div>
+      <CrashReportingRow />
     </div>
+  );
+}
+
+function CrashReportingRow(): ReactElement {
+  const enabled = usePrefs((s) => s.crashReporting);
+  const toggle = async (): Promise<void> => {
+    const next = !enabled;
+    prefsActions().setCrashReporting(next);
+    await window.redvoice.setCrashReporting(next);
+  };
+  return (
+    <>
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "var(--s-4)",
+          cursor: "pointer",
+          padding: "10px 0",
+          borderBottom: "1px solid var(--border-soft)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>Crash reporting</div>
+          <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 2 }}>
+            Local-only dumps to your user data folder. Off by default. Takes effect on next launch.
+          </div>
+        </div>
+        <span
+          onClick={() => void toggle()}
+          style={{
+            width: 36,
+            height: 20,
+            borderRadius: 999,
+            background: enabled ? "var(--accent)" : "var(--bg-elev-3)",
+            border:
+              "1px solid " +
+              (enabled
+                ? "color-mix(in oklch, var(--accent) 70%, black)"
+                : "var(--border-strong)"),
+            position: "relative",
+            transition: "all var(--d-base) var(--ease-out)",
+            boxShadow: enabled
+              ? "0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent)"
+              : "none",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 1,
+              left: enabled ? 17 : 1,
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "var(--text)",
+              transition: "left var(--d-base) var(--ease-out)",
+            }}
+          />
+        </span>
+      </label>
+      <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
+        <button
+          type="button"
+          className="rv-btn"
+          data-variant="ghost"
+          style={{ height: "1.8rem", fontSize: "var(--t-xs)" }}
+          onClick={() => void window.redvoice.openCrashDumps()}
+        >
+          View dump folder
+        </button>
+      </div>
+    </>
   );
 }
 

@@ -35,6 +35,8 @@ const bridge: RedVoiceBridge = {
   askMediaPermission: (kind) => ipcRenderer.invoke("perm:ask-media", kind),
   openMacScreenSettings: () => ipcRenderer.invoke("perm:open-mac-screen-settings"),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
+  setCrashReporting: (enabled) => ipcRenderer.invoke("app:set-crash-reporting", enabled),
+  openCrashDumps: () => ipcRenderer.invoke("app:open-crash-dumps"),
 };
 
 contextBridge.exposeInMainWorld("redvoice", bridge);

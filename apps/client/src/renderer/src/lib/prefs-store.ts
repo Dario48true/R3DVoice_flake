@@ -21,6 +21,7 @@ export interface PrefsState {
   openSettingsKeybind: string | null;
   leaveRoomKeybind: string | null;
   compatibilityMode: boolean;
+  crashReporting: boolean;
   serverUrl: string;
 
   setMicDeviceId(id: string | null): void;
@@ -35,6 +36,7 @@ export interface PrefsState {
   setOpenSettingsKeybind(k: string | null): void;
   setLeaveRoomKeybind(k: string | null): void;
   setCompatibilityMode(v: boolean): void;
+  setCrashReporting(v: boolean): void;
   setServerUrl(u: string): void;
 }
 
@@ -51,6 +53,7 @@ const DEFAULTS = {
   openSettingsKeybind: null as string | null,
   leaveRoomKeybind: null as string | null,
   compatibilityMode: false,
+  crashReporting: false,
   serverUrl: "https://voice.r3dwolfie.com",
 };
 
@@ -82,6 +85,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
       openSettingsKeybind: state.openSettingsKeybind,
       leaveRoomKeybind: state.leaveRoomKeybind,
       compatibilityMode: state.compatibilityMode,
+      crashReporting: state.crashReporting,
       serverUrl: state.serverUrl,
     };
     storage.write(JSON.stringify(payload));
@@ -101,6 +105,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     setOpenSettingsKeybind: (v) => { set({ openSettingsKeybind: v }); persistFromState(get()); },
     setLeaveRoomKeybind: (v) => { set({ leaveRoomKeybind: v }); persistFromState(get()); },
     setCompatibilityMode: (v) => { set({ compatibilityMode: v }); persistFromState(get()); },
+    setCrashReporting: (v) => { set({ crashReporting: v }); persistFromState(get()); },
     setServerUrl: (v) => { set({ serverUrl: v }); persistFromState(get()); },
   }));
 }

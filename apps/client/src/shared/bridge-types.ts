@@ -57,6 +57,10 @@ export interface RedVoiceBridge {
   openMacScreenSettings(): Promise<void>;
   /** Open an http(s) URL in the default browser. Other schemes are rejected. */
   openExternal(url: string): Promise<void>;
+  /** Toggle opt-in crash reporting (takes effect on next launch). */
+  setCrashReporting(enabled: boolean): Promise<void>;
+  /** Open the OS file manager at the local crash-dump directory. */
+  openCrashDumps(): Promise<void>;
 }
 
 export type DeepLinkEvent = { type: "join-room"; roomId: string };

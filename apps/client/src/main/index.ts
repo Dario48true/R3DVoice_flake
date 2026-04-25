@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, crashReporter, desktopCapturer, ipcMain, Menu, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { existsSync, writeFileSync, rmSync } from "node:fs";
 import { saveToken, getToken, clearToken } from "./token-store.js";
@@ -72,6 +72,24 @@ try {
   }
 } catch {
   // Too early; skip. Flag will take effect on the next launch.
+}
+
+// Opt-in crash reporting. When enabled, dumps go to userData/Crashpad locally;
+// no remote upload until/unless a submitURL is configured by the operator.
+try {
+  const userData = process.env["REDVOICE_USER_DATA_DIR"] ?? app.getPath("userData");
+  const crashFlagPath = join(userData, "crash-reporting.flag");
+  if (existsSync(crashFlagPath)) {
+    crashReporter.start({
+      productName: "RedVoice",
+      companyName: "R3dWolfie",
+      // Empty submitURL = local-only dumps. Operator can override later.
+      submitURL: "",
+      uploadToServer: false,
+    });
+  }
+} catch {
+  // Crash reporter init is best-effort; never block startup.
 }
 
 async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow> {
@@ -151,6 +169,24 @@ function registerIpcHandlers(): void {
       writeFileSync(flagPath, "1");
     } else {
       rmSync(flagPath, { force: true });
+    }
+  });
+  ipcMain.handle("app:set-crash-reporting", (_evt, enabled: unknown) => {
+    const userData = process.env["REDVOICE_USER_DATA_DIR"] ?? app.getPath("userData");
+    const flagPath = join(userData, "crash-reporting.flag");
+    if (enabled === true) {
+      writeFileSync(flagPath, "1");
+    } else {
+      rmSync(flagPath, { force: true });
+    }
+  });
+  ipcMain.handle("app:open-crash-dumps", async () => {
+    const userData = process.env["REDVOICE_USER_DATA_DIR"] ?? app.getPath("userData");
+    const dumpsDir = join(userData, "Crashpad");
+    if (existsSync(dumpsDir)) {
+      await shell.openPath(dumpsDir);
+    } else {
+      await shell.openPath(userData);
     }
   });
   // macOS media-permission introspection. On non-mac platforms these APIs
