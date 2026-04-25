@@ -7,7 +7,7 @@ rtc:
   tcp_port: 7881           # TCP fallback for media
   port_range_start: 50000  # UDP range for media
   port_range_end: 50020
-  use_external_ip: false
+  use_external_ip: true
 keys:
   # <api_key>: <api_secret>
   # DEV ONLY — change before exposing to the internet.
