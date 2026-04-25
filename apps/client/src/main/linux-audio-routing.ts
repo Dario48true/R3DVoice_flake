@@ -68,26 +68,37 @@ function getRendererAudioServicePid(): string | null {
   return audio?.pid?.toString() ?? null;
 }
 
+/**
+ * Every PID Electron has spawned for this app — main, all renderers, the
+ * GPU process, every utility process (Audio Service, Network Service, etc).
+ * Audio output can come from any of them depending on which renderer is
+ * playing what; missing one means RedVoice leaks into the share.
+ */
+function getAllRedVoicePids(): Set<string> {
+  const pids = new Set<string>();
+  pids.add(String(process.pid));
+  for (const proc of app.getAppMetrics()) {
+    if (proc.pid) pids.add(String(proc.pid));
+  }
+  return pids;
+}
+
 function getRedVoiceExcludeRules(): Node[] {
   // Match any audio stream whose origin is a RedVoice process — by PID,
-  // by binary name, by app name, by node name. PipeWire reports different
-  // facets for different streams (renderer vs Audio Service vs main), and a
-  // miss anywhere means the user's own playback bleeds back into the share.
-  // Each rule is OR'd by venmic, so adding more is strictly safer.
+  // by binary name, by app name. Each rule is OR'd by venmic, so adding
+  // more is strictly safer.
   const rules: Node[] = [];
 
-  const audioPid = getRendererAudioServicePid();
-  if (audioPid) rules.push({ "application.process.id": audioPid });
-  rules.push({ "application.process.id": String(process.pid) });
+  // One PID rule per sub-process. ~5–10 entries typical (main + audio +
+  // gpu + renderers); cheap.
+  for (const pid of getAllRedVoicePids()) {
+    rules.push({ "application.process.id": pid });
+  }
 
-  // Process binary name (executableName: "redvoice" per electron-builder.yml).
-  // Match BOTH the dynamic execPath and the literal name in case the AppImage
-  // mounts under a different basename.
   const execName = basename(process.execPath).toLowerCase();
   if (execName) rules.push({ "application.process.binary": execName });
   rules.push({ "application.process.binary": "redvoice" });
 
-  // App name (app.setName("RedVoice")) and casing variants PipeWire might use.
   rules.push({ "application.name": "RedVoice" });
   rules.push({ "application.name": app.getName() });
 
@@ -145,19 +156,21 @@ export function listLinuxAudioSources(): AudioSourceSummary[] {
 
   // Build a "is this RedVoice?" predicate using the same facet matches we
   // hand to PatchBay.link()'s exclude. PipeWire reports audio streams under
-  // multiple sub-process PIDs (Audio Service, renderer, GPU); single-PID
-  // exclusion misses some, so the user sees their own "Chromium" entry.
-  const ourPid = String(process.pid);
-  const audioPid = getRendererAudioServicePid();
+  // multiple sub-process PIDs (main, Audio Service, renderer, GPU);
+  // single-PID exclusion misses some, so the user sees their own "Chromium"
+  // entry. Enumerate every Electron sub-process PID via getAppMetrics().
+  const ourPids = getAllRedVoicePids();
   const execName = basename(process.execPath).toLowerCase();
   const appName = app.getName();
   const isRedVoice = (n: Record<string, string>): boolean => {
     const pid = n["application.process.id"];
-    if (pid === ourPid) return true;
-    if (audioPid && pid === audioPid) return true;
+    if (pid && ourPids.has(pid)) return true;
     const bin = n["application.process.binary"]?.toLowerCase();
     if (bin === execName) return true;
     if (bin === "redvoice") return true;
+    // Catch substring matches in case the binary is wrapped (AppRun /
+    // appimage-launcher) or someone renamed the bundle.
+    if (bin && bin.includes("redvoice")) return true;
     if (n["application.name"] === "RedVoice") return true;
     if (n["application.name"] === appName) return true;
     return false;
