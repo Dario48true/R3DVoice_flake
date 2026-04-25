@@ -33,6 +33,42 @@ app.setName("RedVoice");
 app.commandLine.appendSwitch("class", "RedVoice");
 Menu.setApplicationMenu(null);
 
+// Force WebRTC H.264 encoding to go through hardware (Media Foundation on
+// Windows, VAAPI on Linux, VideoToolbox on macOS) instead of falling back
+// to the OpenH264 software encoder. v0.5.5 stats showed impl=OpenH264 with
+// enc=0–2 fps at 1080p60 — software encode simply cannot keep up.
+//
+// `ignore-gpu-blocklist` lets GPUs flagged by Chromium (often for stale
+// driver bugs) still use HW. The feature list collects the flags that gate
+// the hardware H.264 / video-encode path on each platform Chromium 134
+// recognises — not all are active on every platform but extras are no-ops.
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+app.commandLine.appendSwitch(
+  "enable-features",
+  [
+    // Windows: route WebRTC video encode through Media Foundation, which
+    // dispatches to NVENC (NVIDIA), QuickSync (Intel) or VCN (AMD).
+    "MediaFoundationVideoCapture",
+    "MediaFoundationH264CbpEncoding",
+    "MediaFoundationVP8Encoding",
+    "MediaFoundationClearH264Encoding",
+    // Linux: enable VAAPI encode/decode for H.264, VP8, VP9.
+    "VaapiVideoEncoder",
+    "VaapiVideoDecoder",
+    "VaapiVideoDecodeLinuxGL",
+    // Cross-platform: lets HW pipeline use NV12/multi-plane GPU buffers
+    // instead of CPU-side conversion.
+    "UseMultiPlaneFormatForHardwareVideoFrames",
+    "UseMultiPlaneFormatForSoftwareVideo",
+  ].join(","),
+);
+// Don't fight Chromium's IPC video decoder selection — leaving the default
+// (in-GPU-process decode) lets the platform encoder accelerator initialise.
+app.commandLine.appendSwitch(
+  "disable-features",
+  ["UseChromeOSDirectVideoDecoder"].join(","),
+);
+
 // Single-instance lock: a second `redvoice://…` launch funnels through
 // `second-instance` instead of spawning another process.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
