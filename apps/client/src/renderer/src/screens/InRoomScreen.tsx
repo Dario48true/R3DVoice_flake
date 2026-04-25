@@ -27,6 +27,7 @@ import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
 import { RoomChatPanel } from "../components/RoomChatPanel.js";
+import { useKeybind } from "../lib/keybinds.js";
 
 export interface InRoomScreenProps {
   roomId: string;
@@ -627,6 +628,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [menu, setMenu] = useState<VolumeMenu | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [deafened, setDeafened] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [layout, setLayout] = useState<LayoutMode>("auto");
 
@@ -693,6 +695,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       const el = track.attach() as HTMLAudioElement;
       el.autoplay = true;
       (el as HTMLElement & { playsInline?: boolean }).playsInline = true;
+      el.muted = deafened;
       mount.appendChild(el);
     };
     const onTrackUnsubscribed = (track: Track): void => {
@@ -706,9 +709,24 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       room.off(RoomEvent.TrackSubscribed, onTrackSubscribed);
       room.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
     };
-  }, [roomWrapper]);
+  }, [roomWrapper, deafened]);
+
+  // Deafen toggle: mute every <audio> currently mounted. New tracks pick up
+  // the state via the attach handler above.
+  useEffect(() => {
+    const mount = audioMountRef.current;
+    if (!mount) return;
+    mount.querySelectorAll("audio").forEach((el) => {
+      (el as HTMLAudioElement).muted = deafened;
+    });
+  }, [deafened]);
 
   const pttKeybind = usePrefs((s) => s.pttKeybind);
+  const muteKeybind = usePrefs((s) => s.muteKeybind);
+  const deafenKeybind = usePrefs((s) => s.deafenKeybind);
+  const shareScreenKeybind = usePrefs((s) => s.shareScreenKeybind);
+  const openSettingsKeybind = usePrefs((s) => s.openSettingsKeybind);
+  const leaveRoomKeybind = usePrefs((s) => s.leaveRoomKeybind);
   const prefMic = usePrefs((s) => s.micDeviceId);
   const micProcessing = usePrefs((s) => ({
     noiseSuppression: s.noiseSuppression,
@@ -779,6 +797,16 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     const isSharing = hasScreenShare(snapshot.local);
     await roomWrapper.setScreenShare(!isSharing);
   }
+
+  // Wire prefs-driven keybinds for the in-room actions. PTT remains separate
+  // (uses globalShortcut so it works when unfocused).
+  useKeybind(muteKeybind, () => {
+    void roomWrapper.setMuted(!(snapshot.local?.isMicrophoneEnabled ?? true));
+  });
+  useKeybind(deafenKeybind, () => setDeafened((d) => !d));
+  useKeybind(shareScreenKeybind, () => void handleToggleScreen());
+  useKeybind(openSettingsKeybind, () => setSettingsOpen(true));
+  useKeybind(leaveRoomKeybind, () => void handleLeave());
 
   function setVoiceVolume(id: string, volume: number): void {
     setVoiceVolumes((prev) => ({ ...prev, [id]: volume }));
@@ -1255,11 +1283,10 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           />
           <ControlButton
             icon={<I.Headphones size={20} />}
-            label="Deafen"
-            onClick={() => {
-              /* Coming soon — no-op stub */
-            }}
-            title="Coming soon"
+            label={deafened ? "Undeafen" : "Deafen"}
+            active={!deafened}
+            danger={deafened}
+            onClick={() => setDeafened((d) => !d)}
           />
           <div style={{ width: 1, background: "var(--border-soft)", margin: "0 var(--s-2)" }} />
           <ControlButton

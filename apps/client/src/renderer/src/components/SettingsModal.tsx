@@ -7,7 +7,6 @@ import {
 } from "react";
 import { listAudioInputs, listAudioOutputs, type DeviceInfo } from "../lib/media.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
-import { MOD_KEY, SHIFT_KEY } from "../lib/platform.js";
 import type { MediaPermissionStatus } from "../../../shared/bridge-types.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
@@ -414,8 +413,48 @@ function Toggle({
   );
 }
 
+interface KeybindRowSpec {
+  label: string;
+  key:
+    | "pttKeybind"
+    | "muteKeybind"
+    | "deafenKeybind"
+    | "shareScreenKeybind"
+    | "openSettingsKeybind"
+    | "leaveRoomKeybind";
+  global: boolean;
+}
+
+const KEYBIND_ROWS: KeybindRowSpec[] = [
+  { label: "Push to talk", key: "pttKeybind", global: true },
+  { label: "Toggle mute", key: "muteKeybind", global: false },
+  { label: "Toggle deafen", key: "deafenKeybind", global: false },
+  { label: "Toggle screen-share", key: "shareScreenKeybind", global: false },
+  { label: "Open settings", key: "openSettingsKeybind", global: false },
+  { label: "Leave room", key: "leaveRoomKeybind", global: false },
+];
+
 function KeybindsTab(): ReactElement {
-  const current = usePrefs((s) => s.pttKeybind);
+  return (
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)", maxWidth: 460 }}
+    >
+      <div className="rv-section-head">
+        <span className="rv-label">Keybinds</span>
+      </div>
+      {KEYBIND_ROWS.map((row) => (
+        <KeybindRow key={row.key} spec={row} />
+      ))}
+      <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: "var(--s-2)", lineHeight: 1.5 }}>
+        Push-to-talk uses a system-wide hotkey (works when the app is unfocused).
+        The rest only fire when the RedVoice window is focused.
+      </div>
+    </div>
+  );
+}
+
+function KeybindRow({ spec }: { spec: KeybindRowSpec }): ReactElement {
+  const current = usePrefs((s) => s[spec.key]);
   const [recording, setRecording] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);
 
@@ -423,13 +462,18 @@ function KeybindsTab(): ReactElement {
     if (!recording) return;
     function onKey(e: KeyboardEvent): void {
       e.preventDefault();
+      e.stopPropagation();
       if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
       const parts: string[] = [];
       if (e.ctrlKey) parts.push("Control");
       if (e.shiftKey) parts.push("Shift");
       if (e.altKey) parts.push("Alt");
       if (e.metaKey) parts.push("Super");
-      const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      const key = e.key === " " ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.key;
       parts.push(key);
       setCaptured(parts.join("+"));
       setRecording(false);
@@ -438,100 +482,68 @@ function KeybindsTab(): ReactElement {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [recording]);
 
+  const persist = async (next: string | null): Promise<void> => {
+    const setter = `set${spec.key.charAt(0).toUpperCase()}${spec.key.slice(1)}` as
+      | "setPttKeybind"
+      | "setMuteKeybind"
+      | "setDeafenKeybind"
+      | "setShareScreenKeybind"
+      | "setOpenSettingsKeybind"
+      | "setLeaveRoomKeybind";
+    prefsActions()[setter](next);
+    if (spec.global) {
+      // PTT goes through globalShortcut in main; others stay in renderer.
+      await window.redvoice.setPttKeybind(next);
+    }
+  };
+
   async function save(): Promise<void> {
     if (!captured) return;
-    await window.redvoice.setPttKeybind(captured);
-    prefsActions().setPttKeybind(captured);
+    await persist(captured);
     setCaptured(null);
   }
 
   async function clear(): Promise<void> {
-    await window.redvoice.setPttKeybind(null);
-    prefsActions().setPttKeybind(null);
+    await persist(null);
+    setCaptured(null);
   }
 
   const display = captured ?? current ?? "(none)";
-
-  // only PTT is wired — others are coming soon
-  const decorative: Array<[string, string]> = [
-    ["Toggle mute", `${MOD_KEY} + ${SHIFT_KEY} + M`],
-    ["Toggle deafen", `${MOD_KEY} + ${SHIFT_KEY} + D`],
-    ["Toggle screen-share", `${MOD_KEY} + ${SHIFT_KEY} + E`],
-    ["Open settings", `${MOD_KEY} + ,`],
-    ["Leave room", `${MOD_KEY} + W`],
-  ];
 
   return (
     <div
       style={{
         display: "flex",
-        flexDirection: "column",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "10px 0",
+        borderBottom: "1px solid var(--border-soft)",
         gap: "var(--s-3)",
-        maxWidth: 460,
+        flexWrap: "wrap",
       }}
     >
-      <div className="rv-section-head">
-        <span className="rv-label">Global keybinds</span>
-      </div>
-
-      {/* PTT — fully wired */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "10px 0",
-          borderBottom: "1px solid var(--border-soft)",
-          gap: "var(--s-3)",
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ fontSize: "var(--t-sm)" }}>Push to talk</span>
-        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <kbd style={kbdStyle}>{display}</kbd>
-          <button
-            className="rv-btn"
-            data-variant="ghost"
-            onClick={() => setRecording(true)}
-            disabled={recording}
-          >
-            {recording ? "Press a key…" : "Rebind"}
-          </button>
-          {captured && (
-            <button className="rv-btn" data-variant="primary" onClick={() => void save()}>
-              Save
-            </button>
-          )}
-          {current && !captured && (
-            <button className="rv-btn" data-variant="ghost" onClick={() => void clear()}>
-              Clear
-            </button>
-          )}
-        </span>
-      </div>
-
-      {/* Decorative rows — placeholder until Phase 5 T-keybinds */}
-      {decorative.map(([l, k]) => (
-        <div
-          key={l}
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "10px 0",
-            borderBottom: "1px solid var(--border-soft)",
-          }}
+      <span style={{ fontSize: "var(--t-sm)" }}>{spec.label}</span>
+      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <kbd style={kbdStyle}>{display}</kbd>
+        <button
+          className="rv-btn"
+          data-variant="ghost"
+          onClick={() => setRecording(true)}
+          disabled={recording}
         >
-          <span style={{ fontSize: "var(--t-sm)" }}>{l}</span>
-          <span style={{ display: "flex", gap: 4 }}>
-            {k.split(" + ").map((kk, i) => (
-              <kbd key={i} style={kbdStyle}>
-                {kk}
-              </kbd>
-            ))}
-          </span>
-        </div>
-      ))}
+          {recording ? "Press a key…" : "Rebind"}
+        </button>
+        {captured && (
+          <button className="rv-btn" data-variant="primary" onClick={() => void save()}>
+            Save
+          </button>
+        )}
+        {current && !captured && (
+          <button className="rv-btn" data-variant="ghost" onClick={() => void clear()}>
+            Clear
+          </button>
+        )}
+      </span>
     </div>
   );
 }
