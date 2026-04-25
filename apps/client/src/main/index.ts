@@ -99,6 +99,17 @@ try {
   // Crash reporter init is best-effort; never block startup.
 }
 
+function appendCrashLog(message: string): void {
+  const ts = new Date().toISOString();
+  try {
+    const fs = require("node:fs") as typeof import("node:fs");
+    fs.appendFileSync(
+      join(app.getPath("userData"), "renderer-crash.log"),
+      `[${ts}] ${message}\n`,
+    );
+  } catch { /* logging best-effort */ }
+}
+
 async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow> {
   const iconPath = resolveIconPath();
   const bounds = getInitialWindowBounds();
@@ -132,16 +143,14 @@ async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow
     }, 300);
   });
 
-  // Surface renderer crashes — without this the user sees the BrowserWindow
-  // chrome holding up an empty black canvas with no idea what happened.
-  // Append to a per-user log so we can reconstruct what crashed.
+  // Surface renderer crashes/hangs/errors. Without this, the user sees the
+  // BrowserWindow chrome holding up an empty black canvas with no idea what
+  // happened. Three layers cover the common failure modes:
+  //   - render-process-gone:  process actually died
+  //   - unresponsive:         renderer alive but stuck (infinite loop, deadlock)
+  //   - app:log-error IPC:    uncaught JS errors / promise rejections
   win.webContents.on("render-process-gone", (_evt, details) => {
-    const ts = new Date().toISOString();
-    const line = `[${ts}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}\n`;
-    try {
-      const fs = require("node:fs") as typeof import("node:fs");
-      fs.appendFileSync(join(app.getPath("userData"), "renderer-crash.log"), line);
-    } catch { /* logging best-effort */ }
+    appendCrashLog(`render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
     if (!app.isReady() || win.isDestroyed()) return;
     void dialog.showMessageBox(win, {
       type: "error",
@@ -162,13 +171,33 @@ async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow
       }
     }).catch(() => { /* dialog dismissed */ });
   });
+  win.on("unresponsive", () => {
+    appendCrashLog("window unresponsive (renderer hung)");
+    if (win.isDestroyed()) return;
+    void dialog.showMessageBox(win, {
+      type: "warning",
+      title: "RedVoice — window frozen",
+      message: "The window stopped responding.",
+      detail:
+        `A log was written to:\n${join(app.getPath("userData"), "renderer-crash.log")}\n\n` +
+        `Click "Reload" to recover, "Wait" to give it more time, or "Quit" to close.`,
+      buttons: ["Reload", "Wait", "Quit"],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0 && !win.isDestroyed()) {
+        win.webContents.forcefullyCrashRenderer();
+        // The render-process-gone handler will reload from there.
+      } else if (response === 2) {
+        app.quit();
+      }
+    }).catch(() => { /* dialog dismissed */ });
+  });
+  win.on("responsive", () => {
+    appendCrashLog("window responsive again");
+  });
   win.webContents.on("did-fail-load", (_evt, errorCode, errorDescription, validatedURL) => {
-    const ts = new Date().toISOString();
-    const line = `[${ts}] did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}\n`;
-    try {
-      const fs = require("node:fs") as typeof import("node:fs");
-      fs.appendFileSync(join(app.getPath("userData"), "renderer-crash.log"), line);
-    } catch { /* logging best-effort */ }
+    appendCrashLog(`did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
   });
 
   // Setting applicationMenu to null drops Electron's default accelerators
@@ -237,6 +266,10 @@ function registerIpcHandlers(): void {
     } else {
       await shell.openPath(userData);
     }
+  });
+  ipcMain.handle("app:log-error", (_evt, line: unknown) => {
+    if (typeof line !== "string") return;
+    appendCrashLog(line.replace(/\n/g, " ⏎ "));
   });
   // macOS media-permission introspection. On non-mac platforms these APIs
   // are no-ops ("granted" / resolves true) so the renderer can call them

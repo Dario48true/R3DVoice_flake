@@ -61,6 +61,8 @@ export interface RedVoiceBridge {
   setCrashReporting(enabled: boolean): Promise<void>;
   /** Open the OS file manager at the local crash-dump directory. */
   openCrashDumps(): Promise<void>;
+  /** Append a renderer-side error/warning to userData/renderer-crash.log. */
+  logError(line: string): Promise<void>;
   /**
    * Start the native system-audio capture helper (Windows-only). Pass
    * `includePid` to capture only that process's audio (per-app share);

@@ -37,6 +37,7 @@ const bridge: RedVoiceBridge = {
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
   setCrashReporting: (enabled) => ipcRenderer.invoke("app:set-crash-reporting", enabled),
   openCrashDumps: () => ipcRenderer.invoke("app:open-crash-dumps"),
+  logError: (line) => ipcRenderer.invoke("app:log-error", line),
   startSystemAudioCapture: (options) => ipcRenderer.invoke("system-audio:start", options),
   stopSystemAudioCapture: () => ipcRenderer.invoke("system-audio:stop"),
   systemAudioFormat: () => ipcRenderer.invoke("system-audio:format"),
