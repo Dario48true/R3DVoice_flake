@@ -26,6 +26,8 @@
     "@redvoice/shared": "workspace:*",
     "electron-updater": "^6.3.0",
     "livekit-client": "^2.9.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

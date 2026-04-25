@@ -25,7 +25,10 @@ linux:
   # Point at directory of multi-size PNGs so the AppImage bundles
   # 32/48/64/128/256/512/1024 — desktop-integration's findAppIcon walks these.
   icon: build/icons
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Stable filename across versions: electron-updater replaces the file in
+  # place after download, so the user's shortcut keeps pointing at the right
+  # path forever. Version is still in latest-linux.yml + the release tag.
+  artifactName: ${productName}.${ext}
   # Override the executable name away from the sanitized package name
   # (@redvoiceclient). Affects WMClass matching + .desktop lookups.
   executableName: redvoice
@@ -43,6 +46,7 @@ win:
       arch:
         - x64
   icon: build/icon.png
+  artifactName: ${productName}-Setup.${ext}
 
 nsis:
   oneClick: false
@@ -56,6 +60,7 @@ mac:
   icon: build/icon.png
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  artifactName: ${productName}.${ext}
 
 publish:
   provider: github
