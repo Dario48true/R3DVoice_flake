@@ -1,6 +1,6 @@
 {
   "name": "@redvoice/client",
-  "version": "0.4.13",
+  "version": "0.4.14",
   "private": true,
   "description": "RedVoice – low-latency voice/video communication for gamers",
   "author": {
@@ -30,6 +30,9 @@
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1",
     "zustand": "^5.0.2"
+  },
+  "optionalDependencies": {
+    "@vencord/venmic": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

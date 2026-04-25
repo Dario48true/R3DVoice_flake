@@ -17,6 +17,12 @@ files:
 
 asar: true
 
+# Native modules with prebuilt .node binaries can't load from inside an
+# asar archive; electron-builder unpacks them next to the asar so require()
+# can resolve them at runtime.
+asarUnpack:
+  - "**/node_modules/@vencord/venmic/**"
+
 linux:
   target:
     - AppImage

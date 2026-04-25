@@ -46,12 +46,12 @@ export interface JoinOptions {
 }
 
 /**
- * Linux: capture screenshare audio from a PulseAudio/PipeWire monitor source.
+ * Linux: capture screenshare audio. Two paths:
  *
- * If `preferLabelContains` is given (e.g. "RedVoice Share Capture" set up
- * by main's enableLinuxAudioRouting), prefer the monitor whose label
- * contains it — that one excludes RedVoice's own playback. Otherwise fall
- * back to any "Monitor of …" source (full system mix; will echo).
+ * 1. If `preferLabelContains` matches a virtual venmic device (e.g.
+ *    "vencord-screen-share") — capture that. Excludes RedVoice's own playback.
+ * 2. Otherwise fall back to a PulseAudio/PipeWire "Monitor of …" source
+ *    (full system mix; will echo unless user wears headphones).
  */
 async function captureLinuxMonitorSource(
   preferLabelContains?: string,
@@ -66,20 +66,33 @@ async function captureLinuxMonitorSource(
       devices = await navigator.mediaDevices.enumerateDevices();
     }
 
-    const monitors = devices.filter(
-      (d) => d.kind === "audioinput" && /monitor/i.test(d.label),
-    );
-    if (monitors.length === 0) return null;
-
     let target: MediaDeviceInfo | undefined;
     if (preferLabelContains) {
       const needle = preferLabelContains.toLowerCase();
-      target = monitors.find((m) => m.label.toLowerCase().includes(needle));
+      target = devices.find(
+        (d) => d.kind === "audioinput" && d.label.toLowerCase().includes(needle),
+      );
     }
-    target ??= monitors.find((m) => /default/i.test(m.label)) ?? monitors[0]!;
+    if (!target) {
+      // Fallback: any monitor source.
+      const monitors = devices.filter(
+        (d) => d.kind === "audioinput" && /monitor/i.test(d.label),
+      );
+      if (monitors.length === 0) return null;
+      target = monitors.find((m) => /default/i.test(m.label)) ?? monitors[0]!;
+    }
 
     return await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: { exact: target.deviceId } },
+      audio: {
+        deviceId: { exact: target.deviceId },
+        // venmic's virtual device delivers raw PCM at 48 kHz stereo. Disable
+        // browser audio processing so we don't double-process.
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false,
+        channelCount: 2,
+        sampleRate: 48000,
+      },
     });
   } catch {
     return null;

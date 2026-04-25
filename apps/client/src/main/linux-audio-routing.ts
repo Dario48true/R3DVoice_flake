@@ -1,101 +1,68 @@
-// Linux-only: programmatic PulseAudio/PipeWire routing so screenshare audio
-// excludes RedVoice's own playback (incoming call voices) without requiring
-// the user to wear headphones.
+// Linux: per-process audio capture for screenshare via @vencord/venmic.
 //
-// Architecture:
-//   1. Save the user's current default sink (e.g. their speakers / DAC).
-//   2. Create a null sink "redvoice_share" — its monitor is what screenshare
-//      audio capture reads.
-//   3. Create a combine-sink "redvoice_default" with slaves = original
-//      default + redvoice_share. Audio sent here plays through speakers AND
-//      duplicates into the share-capture monitor.
-//   4. Set redvoice_default as the new system default. New audio streams
-//      from other apps automatically end up in both. Existing streams get
-//      moved over.
-//   5. RedVoice's own audio streams are kept on the original default sink
-//      via setSinkId in the renderer — so RedVoice playback bypasses the
-//      combine-sink and never reaches the share-capture monitor.
+// Same approach Vesktop uses (and Discord on Linux). venmic is a native
+// PipeWire patchbay that creates a virtual audio device named
+// "vencord-screen-share". When you `link()` it with an exclusion list, all
+// non-excluded application audio streams are routed to that virtual device.
+// The renderer captures the device via getUserMedia like any other mic.
 //
-// On disable: move sink-inputs back, restore the default, unload modules.
-// On crash: best-effort cleanup via app.on("will-quit"). If RedVoice dies
-// hard, the user can recover with `pactl set-default-sink <name>` (the
-// modules unload automatically when their PulseAudio client connection drops).
+// Phase 1 (this version): exclude RedVoice's own audio service from the
+// virtual device, so screenshare audio carries every OTHER app's sound but
+// not the call audio we're playing back. Same effect as the previous
+// combine-sink hack but without modifying the user's default sink — much
+// less invasive and recoverable on crash.
+//
+// Phase 2 (next): expose the per-app picker so the user can pick exactly
+// which app to share audio from (Discord/Vesktop UX).
 
 import { app, ipcMain } from "electron";
-import { spawn } from "node:child_process";
+import type { PatchBay as PatchBayType, LinkData } from "@vencord/venmic";
 
-interface RoutingState {
-  originalDefaultSink: string;
-  shareSinkModuleId: number;
-  combineSinkModuleId: number;
-  /** Sink-input IDs (PA numeric IDs) we moved to the combine-sink. */
-  movedSinkInputs: string[];
-  maintainTimer: NodeJS.Timeout | null;
-}
+let PatchBay: typeof PatchBayType | null = null;
+let patchBay: PatchBayType | null = null;
+let linked = false;
+let initialized = false;
 
-let state: RoutingState | null = null;
-
-function pactl(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("pactl", args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve(stdout.trim());
-      else reject(new Error(`pactl ${args.join(" ")} exited ${code}: ${stderr.trim() || stdout.trim()}`));
-    });
-  });
-}
-
-async function getDefaultSink(): Promise<string> {
-  return await pactl(["get-default-sink"]);
-}
-
-async function loadModule(name: string, args: string): Promise<number> {
-  // load-module prints the module ID on stdout.
-  const out = await pactl(["load-module", name, ...args.split(/\s+/)]);
-  const id = Number.parseInt(out, 10);
-  if (!Number.isFinite(id)) throw new Error(`load-module ${name} returned non-numeric: ${out}`);
-  return id;
-}
-
-interface SinkInput {
-  id: string;
-  appName: string | null;
-  processId: string | null;
-  sinkId: string | null;
-}
-
-async function listSinkInputs(): Promise<SinkInput[]> {
-  let raw: string;
+function importVenmic(): typeof PatchBayType | null {
+  if (initialized) return PatchBay;
+  initialized = true;
+  if (process.platform !== "linux") return null;
   try {
-    raw = await pactl(["list", "sink-inputs"]);
-  } catch {
-    return [];
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const venmic = require("@vencord/venmic") as typeof import("@vencord/venmic");
+    if (!venmic.PatchBay.hasPipeWire()) {
+      safeLog("[linux-audio] PipeWire not available — venmic skipped");
+      return null;
+    }
+    PatchBay = venmic.PatchBay;
+    return PatchBay;
+  } catch (err) {
+    safeLog("[linux-audio] failed to load venmic:", err);
+    return null;
   }
-  const blocks = raw.split(/\n(?=Sink Input #)/);
-  return blocks.map((block) => {
-    const idMatch = /Sink Input #(\d+)/.exec(block);
-    const sinkMatch = /^\s*Sink:\s*(\d+)/m.exec(block);
-    const appNameMatch = /application\.name\s*=\s*"([^"]+)"/.exec(block);
-    const procIdMatch = /application\.process\.id\s*=\s*"([^"]+)"/.exec(block);
-    return {
-      id: idMatch?.[1] ?? "",
-      sinkId: sinkMatch?.[1] ?? null,
-      appName: appNameMatch?.[1] ?? null,
-      processId: procIdMatch?.[1] ?? null,
-    };
-  }).filter((s) => s.id !== "");
 }
 
-function isOurSinkInput(s: SinkInput, ownPids: Set<string>): boolean {
-  if (s.processId && ownPids.has(s.processId)) return true;
-  // Fallback heuristic — match the app name we set via app.setName("RedVoice").
-  if (s.appName && /^redvoice$/i.test(s.appName)) return true;
-  return false;
+function obtainPatchBay(): PatchBayType | null {
+  const PB = importVenmic();
+  if (!PB) return null;
+  if (!patchBay) {
+    try {
+      patchBay = new PB();
+    } catch (err) {
+      safeLog("[linux-audio] failed to instantiate PatchBay:", err);
+      return null;
+    }
+  }
+  return patchBay;
+}
+
+function getRendererAudioServicePid(): string | null {
+  // Electron runs WebRTC audio playback in a separate "Audio Service"
+  // utility process. Excluding its PID from venmic keeps RedVoice's own
+  // playback (incoming call voices) out of the virtual capture device.
+  const procs = app.getAppMetrics();
+  const audio = procs.find((p) => p.name === "Audio Service");
+  return audio?.pid?.toString() ?? null;
 }
 
 function safeLog(...args: unknown[]): void {
@@ -108,160 +75,68 @@ function safeLog(...args: unknown[]): void {
 }
 
 export interface EnableResult {
-  /** PulseAudio source name to capture for screenshare audio (e.g. "redvoice_share.monitor"). */
-  monitorSourceName: string;
-  /** Human description used for the monitor — helps the renderer locate it via enumerateDevices. */
+  /** Label of the virtual capture device — match it via enumerateDevices. */
   monitorDeviceDescription: string;
 }
 
-/**
- * Set up the routing. Idempotent — if already enabled, returns the existing
- * state's monitor info.
- */
-export async function enableLinuxAudioRouting(): Promise<EnableResult | null> {
-  if (process.platform !== "linux") return null;
-  if (state) {
-    return {
-      monitorSourceName: "redvoice_share.monitor",
-      monitorDeviceDescription: "Monitor of RedVoice Share Capture",
-    };
-  }
+/** Idempotent. Returns null if venmic isn't available (no PipeWire / load failed). */
+export function enableLinuxAudioRouting(): EnableResult | null {
+  const pb = obtainPatchBay();
+  if (!pb) return null;
+  if (linked) return { monitorDeviceDescription: "vencord-screen-share" };
 
-  let originalDefaultSink: string;
-  try {
-    originalDefaultSink = await getDefaultSink();
-  } catch (err) {
-    safeLog("[linux-audio] pactl unavailable:", err);
+  const audioPid = getRendererAudioServicePid();
+  if (!audioPid) {
+    safeLog("[linux-audio] couldn't locate Audio Service PID; aborting to avoid self-capture");
     return null;
   }
-  if (!originalDefaultSink) return null;
 
-  let shareSinkModuleId: number | null = null;
-  let combineSinkModuleId: number | null = null;
+  const data: LinkData = {
+    include: [], // empty include = "everything except exclude"
+    exclude: [
+      { "application.process.id": audioPid },
+      // Don't capture from input/mic streams — only output streams from apps.
+      { "media.class": "Stream/Input/Audio" },
+    ],
+    // Only capture nodes that are actually playing to speakers (skip
+    // disconnected / phantom streams).
+    only_speakers: true,
+    // Skip hardware devices themselves (their monitors get captured via the
+    // app streams that play to them).
+    ignore_devices: true,
+  };
+
   try {
-    shareSinkModuleId = await loadModule(
-      "module-null-sink",
-      `sink_name=redvoice_share sink_properties=device.description="RedVoice_Share_Capture"`,
-    );
-    combineSinkModuleId = await loadModule(
-      "module-combine-sink",
-      `sink_name=redvoice_default slaves=${originalDefaultSink},redvoice_share sink_properties=device.description="RedVoice_Default"`,
-    );
-    await pactl(["set-default-sink", "redvoice_default"]);
-
-    // Move existing non-RedVoice streams onto the combined default.
-    const ownPids = new Set<string>([String(process.pid)]);
-    // Renderer / GPU children share parent PID for ownership but get their
-    // own process IDs in PulseAudio. Best-effort include them — process.pid
-    // alone covers main; the appName fallback catches the rest.
-    const sinkInputs = await listSinkInputs();
-    const moved: string[] = [];
-    for (const s of sinkInputs) {
-      if (isOurSinkInput(s, ownPids)) continue;
-      try {
-        await pactl(["move-sink-input", s.id, "redvoice_default"]);
-        moved.push(s.id);
-      } catch (err) {
-        safeLog("[linux-audio] move-sink-input failed:", s.id, err);
-      }
+    const ok = pb.link(data);
+    if (!ok) {
+      safeLog("[linux-audio] PatchBay.link() returned false");
+      return null;
     }
-
-    // Periodic maintenance: keep RedVoice's own audio streams pinned to the
-    // original default sink (so they stay audible but don't bleed into the
-    // share-capture monitor), and route every other stream onto the combine
-    // sink so it plays AND gets captured. Catches new streams (e.g. when a
-    // new participant joins and a fresh <audio> element starts playing) that
-    // appeared after the initial enable pass.
-    const maintainTimer = setInterval(() => {
-      void maintainRouting().catch(() => { /* swallow */ });
-    }, 2000);
-
-    state = {
-      originalDefaultSink,
-      shareSinkModuleId,
-      combineSinkModuleId,
-      movedSinkInputs: moved,
-      maintainTimer,
-    };
-    safeLog(
-      "[linux-audio] routing enabled — share capture on redvoice_share.monitor, default was",
-      originalDefaultSink,
-    );
-    return {
-      monitorSourceName: "redvoice_share.monitor",
-      monitorDeviceDescription: "Monitor of RedVoice Share Capture",
-    };
+    linked = true;
+    safeLog("[linux-audio] venmic linked — capturing all output streams except PID", audioPid);
+    return { monitorDeviceDescription: "vencord-screen-share" };
   } catch (err) {
-    safeLog("[linux-audio] enable failed, rolling back:", err);
-    // Roll back what we did.
-    if (combineSinkModuleId !== null) {
-      try { await pactl(["unload-module", String(combineSinkModuleId)]); } catch { /* */ }
-    }
-    if (shareSinkModuleId !== null) {
-      try { await pactl(["unload-module", String(shareSinkModuleId)]); } catch { /* */ }
-    }
-    try { await pactl(["set-default-sink", originalDefaultSink]); } catch { /* */ }
+    safeLog("[linux-audio] PatchBay.link() threw:", err);
     return null;
   }
 }
 
-async function maintainRouting(): Promise<void> {
-  if (!state) return;
-  const ownPids = new Set<string>([String(process.pid)]);
-  let inputs: SinkInput[];
-  try {
-    inputs = await listSinkInputs();
-  } catch { return; }
-  for (const i of inputs) {
-    const ours = isOurSinkInput(i, ownPids);
-    if (ours) {
-      // Pin our audio to the original default — bypass the combine so we
-      // don't end up in the share capture.
-      try { await pactl(["move-sink-input", i.id, state.originalDefaultSink]); } catch { /* */ }
-    } else {
-      // Anything else should ride the combine so it lands in both speakers
-      // and the share capture.
-      try {
-        await pactl(["move-sink-input", i.id, "redvoice_default"]);
-        if (!state.movedSinkInputs.includes(i.id)) state.movedSinkInputs.push(i.id);
-      } catch { /* */ }
-    }
-  }
-}
-
-/** Tear down routing. Safe to call when not enabled (no-op). */
-export async function disableLinuxAudioRouting(): Promise<void> {
-  if (!state) return;
-  const s = state;
-  state = null;
-  if (s.maintainTimer) clearInterval(s.maintainTimer);
-
-  // Move the sink-inputs back to where they came from. Best-effort.
-  for (const id of s.movedSinkInputs) {
-    try {
-      await pactl(["move-sink-input", id, s.originalDefaultSink]);
-    } catch { /* sink-input may have closed already */ }
-  }
-
-  try { await pactl(["set-default-sink", s.originalDefaultSink]); } catch { /* */ }
-  try { await pactl(["unload-module", String(s.combineSinkModuleId)]); } catch { /* */ }
-  try { await pactl(["unload-module", String(s.shareSinkModuleId)]); } catch { /* */ }
-
-  safeLog("[linux-audio] routing torn down, default restored to", s.originalDefaultSink);
+/** Tear down the venmic link. Safe to call when not enabled. */
+export function disableLinuxAudioRouting(): void {
+  if (!patchBay || !linked) return;
+  try { patchBay.unlink(); } catch (err) { safeLog("[linux-audio] unlink threw:", err); }
+  linked = false;
+  safeLog("[linux-audio] venmic unlinked");
 }
 
 export function registerLinuxAudioRoutingHandlers(): void {
-  ipcMain.handle("linux-audio-routing:enable", async () => {
-    const result = await enableLinuxAudioRouting();
-    return result;
-  });
-  ipcMain.handle("linux-audio-routing:disable", async () => {
-    await disableLinuxAudioRouting();
-  });
+  ipcMain.handle("linux-audio-routing:enable", () => enableLinuxAudioRouting());
+  ipcMain.handle("linux-audio-routing:disable", () => disableLinuxAudioRouting());
 }
 
-// Cleanup on quit so we don't strand the user's audio config if they close
-// the app while routing is active.
+// Best-effort cleanup so we don't leave the virtual device hanging when the
+// app exits. venmic auto-releases its PipeWire links when the process dies,
+// but unlinking explicitly is faster.
 app.on("will-quit", () => {
-  void disableLinuxAudioRouting();
+  disableLinuxAudioRouting();
 });
