@@ -472,6 +472,7 @@ export class LiveKitRoom {
             screenShareEncoding: {
               maxBitrate: computeScreenShareBitrate(q.width, q.height, q.frameRate),
               maxFramerate: q.frameRate,
+              priority: "high",
             },
             videoCodec: "h264",
             // Gaming/screenshare wants smooth motion — under congestion,
@@ -481,6 +482,37 @@ export class LiveKitRoom {
             degradationPreference: "maintain-framerate",
           },
         );
+        // LiveKit doesn't reliably propagate degradationPreference into the
+        // RTCRtpSender — re-apply it directly, plus crank the network
+        // priority. With BWE being conservative on a fast link (488 Mbps
+        // up with 5 ms ping but BWE stuck at ~1.3 Mbps), networkPriority
+        // tells the OS/QoS layer to prioritise this stream's packets and
+        // tells WebRTC's bandwidth allocator to favour it.
+        try {
+          const screenPub = this.room.localParticipant.getTrackPublication(
+            Track.Source.ScreenShare,
+          );
+          const sender = (screenPub?.track as unknown as { sender?: RTCRtpSender } | undefined)?.sender;
+          if (sender) {
+            const params = sender.getParameters();
+            params.degradationPreference = "maintain-framerate";
+            for (const enc of params.encodings ?? []) {
+              enc.priority = "high";
+              enc.networkPriority = "high";
+            }
+            await sender.setParameters(params);
+            // eslint-disable-next-line no-console
+            console.log(
+              `[screenshare] sender params applied — ` +
+                `deg=${params.degradationPreference} ` +
+                `encPriority=${params.encodings?.[0]?.priority} ` +
+                `netPriority=${params.encodings?.[0]?.networkPriority}`,
+            );
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("[screenshare] failed to set sender params:", err);
+        }
         if (q.audioSource !== null) {
           await this.enableScreenShareAudio(
             q.audioSource === "all" ? undefined : q.audioSource,
