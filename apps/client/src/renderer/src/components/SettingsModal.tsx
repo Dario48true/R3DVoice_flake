@@ -10,6 +10,7 @@ import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import type { MediaPermissionStatus } from "../../../shared/bridge-types.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
+import { downloadKeyBackup, loadKeyPair } from "../lib/key-storage.js";
 import { I } from "./Icons.js";
 import { Modal } from "./Modal.js";
 import { Field } from "./Primitives.js";
@@ -941,6 +942,11 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
       <TwoFactorSection enabled={totpEnabled} />
 
       <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
+        <span className="rv-label">Encryption key backup</span>
+      </div>
+      <E2eeKeySection />
+
+      <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
         <span className="rv-label">Actions</span>
       </div>
       {!confirming ? (
@@ -992,6 +998,51 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
     </div>
   );
 }
+
+function E2eeKeySection(): ReactElement {
+  const user = useAuthStore((s) => s.user);
+  const kp = loadKeyPair();
+  const handleExport = (): void => {
+    if (!kp || !user) return;
+    downloadKeyBackup(user.email, kp);
+  };
+  return (
+    <div
+      style={{
+        padding: "var(--s-4)",
+        background: "var(--bg-elev-2)",
+        border: "1px solid var(--border-soft)",
+        borderRadius: "var(--r-md)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-3)",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>
+          DM encryption keypair
+        </div>
+        <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 2, lineHeight: 1.5 }}>
+          {kp
+            ? "Save this file somewhere safe. You'll need it to read your DM history on a new device. Losing it = losing the history (no recovery — that's the point of zero-trust)."
+            : "No keypair on this device. Sign out and sign in again to generate one, or restore from a previous backup at login."}
+        </div>
+      </div>
+      <div>
+        <button
+          type="button"
+          className="rv-btn"
+          data-variant={kp ? "primary" : "ghost"}
+          disabled={!kp}
+          onClick={handleExport}
+        >
+          <I.Copy size={14} /> Download key backup
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 function TwoFactorSection({ enabled }: { enabled: boolean }): ReactElement {
   const serverUrl = useAuthStore((s) => s.serverUrl);
