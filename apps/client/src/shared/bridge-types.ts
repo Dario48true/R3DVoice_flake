@@ -41,4 +41,11 @@ export interface RedVoiceBridge {
    * Returns an unsubscribe function.
    */
   onSplashStatus(cb: (status: SplashStatus) => void): () => void;
+  /**
+   * Subscribe to deep-link events from the OS (redvoice://…).
+   * Returns an unsubscribe function.
+   */
+  onDeepLink(cb: (link: DeepLinkEvent) => void): () => void;
 }
+
+export type DeepLinkEvent = { type: "join-room"; roomId: string };

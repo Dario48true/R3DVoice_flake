@@ -125,6 +125,17 @@ export function LobbyScreen(): ReactElement {
     }
   }, [activeRoomId, phase.kind]);
 
+  // Deep-link consumer: redvoice://join/<uuid> → auto-open the prejoin flow.
+  // Preload replays any queued event on subscribe, so cold-start with a
+  // restored session also works.
+  useEffect(() => {
+    return window.redvoice.onDeepLink((link) => {
+      if (link.type === "join-room") {
+        void store.getState().join(link.roomId);
+      }
+    });
+  }, [store]);
+
   const [newRoomName, setNewRoomName] = useState("");
   const [joinInput, setJoinInput] = useState("");
 

@@ -218,10 +218,13 @@ export function LoginScreen(): ReactElement {
                 className="rv-input"
                 value={serverUrl}
                 onChange={(e) => {
-                  setServerUrl(e.target.value);
-                  prefsActions().setServerUrl(e.target.value);
+                  // Wayland + Chromium input quirk: some layouts emit "\" for "/" —
+                  // backslashes have no valid use in http(s) URLs, so normalize.
+                  const normalized = e.target.value.replace(/\\/g, "/");
+                  setServerUrl(normalized);
+                  prefsActions().setServerUrl(normalized);
                 }}
-                placeholder="http://localhost:3000"
+                placeholder="https://voice.R3dWolfie.com"
                 spellCheck={false}
                 style={{ paddingRight: "5.5rem" }}
               />

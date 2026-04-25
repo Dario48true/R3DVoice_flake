@@ -11,6 +11,12 @@ import {
   sendSplashStatus,
   closeSplash,
 } from "./splash-window.js";
+import {
+  registerDeepLinkHandlers,
+  extractDeepLinkFromArgv,
+  parseDeepLink,
+  dispatchDeepLink,
+} from "./deep-links.js";
 
 // Force app name / WMClass to "RedVoice" so Plasma/GNOME taskbars match this
 // window to ~/.local/share/applications/redvoice.desktop instead of falling
@@ -19,6 +25,14 @@ import {
 app.setName("RedVoice");
 app.commandLine.appendSwitch("class", "RedVoice");
 Menu.setApplicationMenu(null);
+
+// Single-instance lock: a second `redvoice://…` launch funnels through
+// `second-instance` instead of spawning another process.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
 
 // When launched from a desktop-file or taskbar (no attached terminal),
 // process.stdout/stderr are closed pipes. Any console.* write — ours or
@@ -145,9 +159,30 @@ function registerIpcHandlers(): void {
   });
 }
 
+let mainWindow: BrowserWindow | null = null;
+
+// Hot launch: OS delivers the URL through second-instance argv (Linux/Windows).
+app.on("second-instance", (_event, argv) => {
+  const link = extractDeepLinkFromArgv(argv);
+  if (link) dispatchDeepLink(link, mainWindow);
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+// macOS delivers deep-link clicks via open-url, not argv.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  const link = parseDeepLink(url);
+  if (link) dispatchDeepLink(link, mainWindow);
+});
+
 app.whenReady().then(async () => {
   registerIpcHandlers();
   registerScreenPickerHandlers();
+  registerDeepLinkHandlers();
   writeDesktopEntry();
 
   // Dev-only: REDVOICE_SPLASH_DEMO=1 cycles every splash phase slowly and
@@ -225,10 +260,15 @@ app.whenReady().then(async () => {
     }
   });
 
-  await createWindow(splash);
+  mainWindow = await createWindow(splash);
+
+  // Cold launch via `redvoice://…` — URL is in process.argv; stash as pending
+  // so the renderer picks it up after it finishes loading.
+  const coldLink = extractDeepLinkFromArgv(process.argv);
+  if (coldLink) dispatchDeepLink(coldLink, mainWindow);
 
   app.on("activate", async () => {
-    if (BrowserWindow.getAllWindows().length === 0) await createWindow(null);
+    if (BrowserWindow.getAllWindows().length === 0) mainWindow = await createWindow(null);
   });
 });
 

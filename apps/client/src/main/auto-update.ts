@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow } from "electron";
 // electron-updater exports a CJS-shaped module; use default import interop.
 import electronUpdaterPkg from "electron-updater";
 import { sendSplashStatus } from "./splash-window.js";
@@ -61,25 +61,10 @@ export function initAutoUpdate(splash: BrowserWindow | null = null): void {
   });
 
   autoUpdater.on("update-downloaded", (info) => {
-    send({ phase: "downloaded", message: `Update ${info.version} ready` });
-    const win = BrowserWindow.getAllWindows().find(
-      (w) => w !== splash && !w.isDestroyed(),
-    );
-    if (!win) {
-      safeLog("[auto-update] update downloaded but no window to prompt");
-      return;
-    }
-    void dialog
-      .showMessageBox(win, {
-        type: "info",
-        buttons: ["Restart now", "Later"],
-        defaultId: 0,
-        title: "Update ready",
-        message: `RedVoice ${info.version} is ready. Restart to apply.`,
-      })
-      .then((res) => {
-        if (res.response === 0) autoUpdater.quitAndInstall();
-      });
+    // No dialog — autoInstallOnAppQuit handles it silently on next quit.
+    // Next launch's splash renders the new version directly.
+    safeLog("[auto-update] update downloaded:", info.version);
+    send({ phase: "downloaded", message: `Update ${info.version} queued for next launch` });
   });
 
   autoUpdater.on("error", (err) => {

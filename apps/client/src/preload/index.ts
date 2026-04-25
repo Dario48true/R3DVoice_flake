@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { RedVoiceBridge, SplashStatus } from "../shared/bridge-types.js";
+import type { RedVoiceBridge, SplashStatus, DeepLinkEvent } from "../shared/bridge-types.js";
 
 const bridge: RedVoiceBridge = {
   saveToken: (token) => ipcRenderer.invoke("auth:save-token", token),
@@ -21,6 +21,15 @@ const bridge: RedVoiceBridge = {
     const handler = (_evt: Electron.IpcRendererEvent, status: SplashStatus): void => cb(status);
     ipcRenderer.on("splash:status", handler);
     return () => ipcRenderer.off("splash:status", handler);
+  },
+  onDeepLink: (cb) => {
+    const handler = (_evt: Electron.IpcRendererEvent, link: DeepLinkEvent): void => cb(link);
+    ipcRenderer.on("deep-link", handler);
+    // Ask main for any deep link queued before we subscribed (cold-start case).
+    void ipcRenderer.invoke("deep-link:consume-pending").then((link: DeepLinkEvent | null) => {
+      if (link) cb(link);
+    });
+    return () => ipcRenderer.off("deep-link", handler);
   },
 };
 
