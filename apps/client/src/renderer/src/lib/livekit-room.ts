@@ -466,86 +466,16 @@ export class LiveKitRoom {
             contentHint: "motion",
           },
           {
-            // Per-publish overrides — room defaults are the fallback for
-            // any path that doesn't supply quality (we always do, but the
-            // double-set is belt-and-suspenders against API changes).
             screenShareEncoding: {
               maxBitrate: computeScreenShareBitrate(q.width, q.height, q.frameRate),
               maxFramerate: q.frameRate,
               priority: "high",
             },
             videoCodec: "h264",
-            // Gaming/screenshare wants smooth motion — under congestion,
-            // drop *resolution* before frame rate. The default
-            // ("balanced") drops both, which feels like 0.5 fps even on
-            // moderately-loaded networks.
             degradationPreference: "maintain-framerate",
           },
         );
-        // v0.5.7 priority/degradation overrides didn't help: BWE crept to
-        // ~1.7 Mbps but encoded fps stayed at ~1 fps. Stats showed
-        // qLimit=bandwidth — meaning Chromium *isn't* downscaling
-        // resolution despite maintain-framerate, so the encoder is starving
-        // fps to keep 1080p quality. (Likely the MFT H.264 encoder path
-        // doesn't actually honour mid-stream resolution change.)
-        //
-        // Fix: pre-scale the encoder input via scaleResolutionDownBy. With
-        // 1080p input and scale=1.5 the wire stream is 720p — 720p60 H.264
-        // fits comfortably in ~1.5 Mbps even with quality margin, so BWE's
-        // budget is no longer the bottleneck. Local preview stays 1080p
-        // (preview is pre-scale).
-        try {
-          const screenPub = this.room.localParticipant.getTrackPublication(
-            Track.Source.ScreenShare,
-          );
-          const sender = (screenPub?.track as unknown as { sender?: RTCRtpSender } | undefined)?.sender;
-          if (sender) {
-            const params = sender.getParameters();
-            params.degradationPreference = "maintain-framerate";
-            // Only downscale if the source is actually high-res; a 720p
-            // share doesn't benefit from going to 480p.
-            const shouldScaleDown = q.width >= 1920 || q.height >= 1080;
-            for (const enc of params.encodings ?? []) {
-              enc.priority = "high";
-              enc.networkPriority = "high";
-              if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5; // 1080p → 720p
-            }
-            await sender.setParameters(params);
-            // eslint-disable-next-line no-console
-            console.log(
-              `[screenshare] sender params applied — ` +
-                `deg=${params.degradationPreference} ` +
-                `encPriority=${params.encodings?.[0]?.priority} ` +
-                `netPriority=${params.encodings?.[0]?.networkPriority} ` +
-                `scaleDownBy=${params.encodings?.[0]?.scaleResolutionDownBy ?? 1}`,
-            );
-
-            // Periodically read params back — confirms whether LiveKit or
-            // the platform encoder is reverting our overrides.
-            const verifyHandle = setInterval(() => {
-              try {
-                const cur = sender.getParameters();
-                // eslint-disable-next-line no-console
-                console.log(
-                  `[screenshare] params check — deg=${cur.degradationPreference} ` +
-                    `enc[0].scaleDownBy=${cur.encodings?.[0]?.scaleResolutionDownBy ?? 1} ` +
-                    `enc[0].active=${cur.encodings?.[0]?.active ?? true}`,
-                );
-              } catch { /* */ }
-            }, 5000);
-            // Stop verifying when this track is unpublished.
-            const onUnpub = (p: { source?: Track.Source }): void => {
-              if (p.source === Track.Source.ScreenShare) {
-                clearInterval(verifyHandle);
-                this.room.off(RoomEvent.LocalTrackUnpublished, onUnpub);
-              }
-            };
-            this.room.on(RoomEvent.LocalTrackUnpublished, onUnpub);
-          }
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn("[screenshare] failed to set sender params:", err);
-        }
+        this.applyScreenShareSenderOverrides({ sourceWidth: q.width, sourceHeight: q.height });
         if (q.audioSource !== null) {
           await this.enableScreenShareAudio(
             q.audioSource === "all" ? undefined : q.audioSource,
@@ -553,7 +483,88 @@ export class LiveKitRoom {
         }
       } else {
         await this.room.localParticipant.setScreenShareEnabled(true);
+        this.applyScreenShareSenderOverrides({});
       }
+    }
+  }
+
+  /**
+   * Reach into the underlying RTCRtpSender of the active screenshare track
+   * and force the encoder/transport overrides we need:
+   *   - degradationPreference = "maintain-framerate"
+   *   - encodings[].priority + networkPriority = "high"
+   *   - scaleResolutionDownBy = 1.5 (1080p → 720p) when source is ≥1080p
+   *
+   * Why: LiveKit's TrackPublishOptions don't reliably propagate these into
+   * the RTCRtpSender, and Chromium's MFT H.264 path doesn't honour
+   * mid-stream resolution change anyway. Pre-scaling at the sender means
+   * the encoder never has to dynamically downscale — it gets 720p frames
+   * directly, which fits in ~1.5 Mbps BWE budget at 60 fps cleanly.
+   *
+   * Idempotent: safe to call from join() AND from in-room toggle, both
+   * code paths now route through here so the override applies regardless
+   * of how the share was started.
+   */
+  private applyScreenShareSenderOverrides(opts: {
+    sourceWidth?: number;
+    sourceHeight?: number;
+  }): void {
+    try {
+      const screenPub = this.room.localParticipant.getTrackPublication(
+        Track.Source.ScreenShare,
+      );
+      const sender = (screenPub?.track as unknown as { sender?: RTCRtpSender } | undefined)?.sender;
+      if (!sender) return;
+      const params = sender.getParameters();
+      params.degradationPreference = "maintain-framerate";
+      // Only downscale if the source is high-res. If we don't know the
+      // dims (toggle path with no quality hint), default to scaling — most
+      // modern monitors are ≥1080p.
+      const w = opts.sourceWidth ?? 1920;
+      const h = opts.sourceHeight ?? 1080;
+      const shouldScaleDown = w >= 1920 || h >= 1080;
+      for (const enc of params.encodings ?? []) {
+        enc.priority = "high";
+        enc.networkPriority = "high";
+        if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
+      }
+      void sender.setParameters(params).then(() => {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[screenshare] sender params applied — ` +
+            `deg=${params.degradationPreference} ` +
+            `encPriority=${params.encodings?.[0]?.priority} ` +
+            `netPriority=${params.encodings?.[0]?.networkPriority} ` +
+            `scaleDownBy=${params.encodings?.[0]?.scaleResolutionDownBy ?? 1}`,
+        );
+      }).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.warn("[screenshare] sender.setParameters rejected:", err);
+      });
+
+      // Periodically read params back — confirms whether LiveKit or the
+      // platform encoder is silently reverting our overrides.
+      const verifyHandle = setInterval(() => {
+        try {
+          const cur = sender.getParameters();
+          // eslint-disable-next-line no-console
+          console.log(
+            `[screenshare] params check — deg=${cur.degradationPreference} ` +
+              `enc[0].scaleDownBy=${cur.encodings?.[0]?.scaleResolutionDownBy ?? 1} ` +
+              `enc[0].active=${cur.encodings?.[0]?.active ?? true}`,
+          );
+        } catch { /* */ }
+      }, 5000);
+      const onUnpub = (p: { source?: Track.Source }): void => {
+        if (p.source === Track.Source.ScreenShare) {
+          clearInterval(verifyHandle);
+          this.room.off(RoomEvent.LocalTrackUnpublished, onUnpub);
+        }
+      };
+      this.room.on(RoomEvent.LocalTrackUnpublished, onUnpub);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[screenshare] failed to set sender params:", err);
     }
   }
 
@@ -732,6 +743,13 @@ export class LiveKitRoom {
 
   async setScreenShare(enabled: boolean): Promise<void> {
     await this.room.localParticipant.setScreenShareEnabled(enabled);
+    if (enabled) {
+      // Apply the same encoder/transport overrides the join-time path uses
+      // — without this, in-room toggle gets LiveKit defaults (no
+      // degradationPreference, no scale-down, no priority) and screenshare
+      // collapses to ~1 fps under any BWE pressure.
+      this.applyScreenShareSenderOverrides({});
+    }
     this.emit();
   }
 
