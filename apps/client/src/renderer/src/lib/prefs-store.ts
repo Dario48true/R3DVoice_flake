@@ -71,11 +71,11 @@ const DEFAULTS = {
   crashReporting: false,
   noiseSuppression: "low" as NoiseSuppressionLevel,
   echoCancellation: true,
-  // Software AGC ON by default — uses our Web Audio DynamicsCompressor
-  // pipeline (NOT Windows' AGC). Without this, quiet speakers come
-  // through too low because we ALSO disable Chromium's built-in AGC to
-  // avoid touching OS audio settings. User can flip off in Settings.
-  autoGainControl: true,
+  // OFF by default — even our software AGC adds Web Audio chain depth
+  // and was correlated with high-RTT/dialup-quality reports. Users who
+  // come through quiet can boost via the live mic gain slider in Settings
+  // (now applies in real time without re-opening the mic).
+  autoGainControl: false,
   micGain: 1.0,
   serverUrl: "https://voice.r3dwolfie.com",
   favoriteRoomIds: [] as string[],

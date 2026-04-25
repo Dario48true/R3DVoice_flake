@@ -171,7 +171,7 @@ export class LiveKitRoom {
   private connected = false;
   private err: string | null = null;
   private disconnectKind: DisconnectKind | null = null;
-  private keyProvider: ExternalE2EEKeyProvider;
+  private keyProvider: ExternalE2EEKeyProvider | null;
   private e2eeEnabled = false;
   /** Latest RTT (ms) per participant identity. Updated via DataChannel pings. */
   private rttByParticipant: Record<string, number> = {};
@@ -184,22 +184,22 @@ export class LiveKitRoom {
   // stream so we can stop() its tracks when the user disables audio share.
   private screenAudioAuxStream: MediaStream | null = null;
 
-  constructor() {
-    // E2EE is wired up at room construction. The provider doesn't apply any
-    // encryption until setRoomKey() is called — when no key is set the room
-    // publishes plaintext, exactly like a non-E2EE setup. Toggle is purely
-    // a function of "has a key been set".
-    this.keyProvider = new ExternalE2EEKeyProvider();
+  constructor(options: { enableE2EE?: boolean } = {}) {
+    // E2EE is opt-in. When OFF, we don't construct the keyProvider/worker
+    // at all — that's measured to add observable audio quality overhead in
+    // some livekit-client builds even when no key is set. When ON, the
+    // worker runs SFrame on every frame and key distribution kicks in via
+    // RoomE2EE.
+    //
+    // Toggling at runtime requires a rejoin (LiveKit's e2ee config is
+    // construction-time only).
+    this.keyProvider = options.enableE2EE ? new ExternalE2EEKeyProvider() : null;
     // dynacast disabled — it changes simulcast layer counts at runtime and
     // has been the source of "BUNDLE codec collision PT=111" failures with
     // some server versions. adaptiveStream is fine (purely receive-side).
-    this.room = new Room({
+    const roomOpts = {
       adaptiveStream: true,
       dynacast: false,
-      e2ee: {
-        keyProvider: this.keyProvider,
-        worker: new E2eeWorker(),
-      },
       // Belt-and-suspenders: some livekit-client versions ignore the
       // 3rd arg of setScreenShareEnabled. Setting these as room-wide
       // defaults guarantees the screen track gets the right encoding
@@ -213,9 +213,18 @@ export class LiveKitRoom {
           maxBitrate: 1_500_000,
           maxFramerate: 30,
         },
-        videoCodec: "vp8",
+        videoCodec: "vp8" as const,
       },
-    });
+      ...(options.enableE2EE && this.keyProvider
+        ? {
+            e2ee: {
+              keyProvider: this.keyProvider,
+              worker: new E2eeWorker(),
+            },
+          }
+        : {}),
+    };
+    this.room = new Room(roomOpts);
     this.cachedSnapshot = this.computeSnapshot();
 
     this.room.on(RoomEvent.Connected, () => {
@@ -332,6 +341,7 @@ export class LiveKitRoom {
    * for HKDF-derived keys (recommended).
    */
   async setRoomKey(rawKey: ArrayBuffer): Promise<void> {
+    if (!this.keyProvider) return; // E2EE wasn't enabled at construction
     await this.keyProvider.setKey(rawKey);
     await this.room.setE2EEEnabled(true);
     this.e2eeEnabled = true;
