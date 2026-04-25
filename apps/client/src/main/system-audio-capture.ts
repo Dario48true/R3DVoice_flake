@@ -144,8 +144,12 @@ export function startSystemAudioCapture(
       windowsHide: true,
     });
   } catch {
+    // eslint-disable-next-line no-console
+    console.error(`[system-audio] spawn failed for ${exe} ${args.join(" ")}`);
     return Promise.resolve("unsupported");
   }
+  // eslint-disable-next-line no-console
+  console.log(`[system-audio] helper started pid=${child.pid} args=${args.join(" ")}`);
 
   return new Promise<"started" | "unsupported">((resolve) => {
     let firstChunkSeen = false;
@@ -198,26 +202,43 @@ export function startSystemAudioCapture(
   });
 }
 
-export function stopSystemAudioCapture(): void {
+export async function stopSystemAudioCapture(): Promise<void> {
   if (!session) return;
-  session.stopped = true;
-  // Closing stdin signals the helper to exit cleanly (its main loop blocks
-  // on getchar). Fall back to kill if that doesn't take.
-  try { session.child.stdin.end(); } catch { /* */ }
-  setTimeout(() => {
-    if (session?.child && !session.child.killed) {
-      try { session.child.kill(); } catch { /* */ }
-    }
-  }, 500);
+  const dying = session;
   session = null;
+  dying.stopped = true;
+  // Detach data forwarding *synchronously* — otherwise the old child keeps
+  // streaming PCM chunks into the renderer for the few hundred ms it takes
+  // to shut down via stdin EOF, mixing with whatever the next session
+  // produces. (User-visible bug: picking "osu!" in the per-app picker still
+  // leaked voice into the share because the previous --exclude-pid helper
+  // was still pumping its system-mix PCM in parallel.)
+  try { dying.child.stdout.removeAllListeners("data"); } catch { /* */ }
+  try { dying.child.stderr.removeAllListeners("data"); } catch { /* */ }
+  // Try graceful first (stdin EOF), fall back to kill quickly.
+  try { dying.child.stdin.end(); } catch { /* */ }
+  await new Promise<void>((resolve) => {
+    if (dying.child.exitCode !== null || dying.child.killed) return resolve();
+    let resolved = false;
+    const finish = (): void => { if (!resolved) { resolved = true; resolve(); } };
+    dying.child.once("exit", finish);
+    // Hard kill after 250ms — racing two helpers is much worse than a hard
+    // kill of one we already told to stop.
+    setTimeout(() => {
+      if (!dying.child.killed) {
+        try { dying.child.kill(); } catch { /* */ }
+      }
+    }, 250);
+    setTimeout(finish, 1000);
+  });
 }
 
 export function registerSystemAudioCaptureHandlers(): void {
   ipcMain.handle("system-audio:start", async (event, options?: { includePid?: number }) => {
     return startSystemAudioCapture(event.sender, options ?? {});
   });
-  ipcMain.handle("system-audio:stop", () => {
-    stopSystemAudioCapture();
+  ipcMain.handle("system-audio:stop", async () => {
+    await stopSystemAudioCapture();
   });
   ipcMain.handle("system-audio:format", () => SYSTEM_AUDIO_FORMAT);
   ipcMain.handle("system-audio:list-sessions", () => listWindowsAudioSessions());

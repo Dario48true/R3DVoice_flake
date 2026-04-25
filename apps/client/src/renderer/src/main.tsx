@@ -4,6 +4,10 @@ import { App } from "./App.js";
 import { ScreenPickerDialog } from "./screens/ScreenPickerDialog.js";
 import "./styles.css";
 
+declare const __APP_VERSION__: string;
+// eslint-disable-next-line no-console
+console.log(`[redvoice] renderer boot — v${typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"}`);
+
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("#root not found");
 

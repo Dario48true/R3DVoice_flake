@@ -150,16 +150,30 @@ export async function openMicPipeline(
   // Always wrap in a GainNode pipeline — even at unity. That way the user's
   // gain slider can update the value live without re-opening the mic.
   const ctx = new AudioContext();
+  // Chromium can hand back a suspended AudioContext even when openMicPipeline
+  // is invoked from inside a user-gesture handler (race with autoplay policy
+  // checks during async getUserMedia). Resume explicitly so the gain chain
+  // actually carries audio.
+  if (ctx.state === "suspended") {
+    void ctx.resume();
+  }
   const source = ctx.createMediaStreamSource(stream);
   const gainNode = ctx.createGain();
   gainNode.gain.value = options.gain ?? 1;
   const dest = ctx.createMediaStreamDestination();
   source.connect(gainNode).connect(dest);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[mic] pipeline open — initial gain=${gainNode.gain.value.toFixed(2)} ` +
+      `ctx.state=${ctx.state} sampleRate=${ctx.sampleRate}`,
+  );
 
   return {
     stream: dest.stream,
     setGain: (g) => {
       gainNode.gain.value = g;
+      // eslint-disable-next-line no-console
+      console.log(`[mic] gain → ${g.toFixed(2)} (ctx.state=${ctx.state})`);
     },
     close: () => {
       try { source.disconnect(); } catch { /* */ }

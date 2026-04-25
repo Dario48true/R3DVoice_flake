@@ -31,8 +31,10 @@ export interface PrefsState {
   serverUrl: string;
   /** Room IDs the user has starred — surfaced by future Lobby UX. */
   favoriteRoomIds: string[];
-  /** Per-participant volume map (1.0 = unity). Persists across sessions. */
+  /** Per-participant voice volume map (1.0 = unity). Persists across sessions. */
   participantVolumes: Record<string, number>;
+  /** Per-participant screen-audio volume map (1.0 = unity). Persists across sessions. */
+  participantScreenVolumes: Record<string, number>;
 
   setMicDeviceId(id: string | null): void;
   setSpeakerDeviceId(id: string | null): void;
@@ -55,6 +57,7 @@ export interface PrefsState {
   setServerUrl(u: string): void;
   toggleFavoriteRoom(id: string): void;
   setParticipantVolume(id: string, volume: number): void;
+  setParticipantScreenVolume(id: string, volume: number): void;
 }
 
 const DEFAULTS = {
@@ -83,6 +86,7 @@ const DEFAULTS = {
   serverUrl: "https://voice.r3dwolfie.com",
   favoriteRoomIds: [] as string[],
   participantVolumes: {} as Record<string, number>,
+  participantScreenVolumes: {} as Record<string, number>,
 };
 
 function load(storage: PrefsStorage): typeof DEFAULTS {
@@ -122,6 +126,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
       serverUrl: state.serverUrl,
       favoriteRoomIds: state.favoriteRoomIds,
       participantVolumes: state.participantVolumes,
+      participantScreenVolumes: state.participantScreenVolumes,
     };
     storage.write(JSON.stringify(payload));
   }
@@ -157,6 +162,10 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     },
     setParticipantVolume: (id, volume) => {
       set({ participantVolumes: { ...get().participantVolumes, [id]: volume } });
+      persistFromState(get());
+    },
+    setParticipantScreenVolume: (id, volume) => {
+      set({ participantScreenVolumes: { ...get().participantScreenVolumes, [id]: volume } });
       persistFromState(get());
     },
   }));

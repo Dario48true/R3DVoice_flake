@@ -1000,8 +1000,9 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [conn, setConn] = useState<ConnectionState>({ phase: "connecting" });
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
   const persistedParticipantVolumes = usePrefs((s) => s.participantVolumes);
+  const persistedScreenVolumes = usePrefs((s) => s.participantScreenVolumes);
   const [voiceVolumes, setVoiceVolumes] = useState<Record<string, number>>(persistedParticipantVolumes);
-  const [screenVolumes, setScreenVolumes] = useState<Record<string, number>>({});
+  const [screenVolumes, setScreenVolumes] = useState<Record<string, number>>(persistedScreenVolumes);
   const [menu, setMenu] = useState<VolumeMenu | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1308,11 +1309,22 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
   function setScreenVolume(id: string, volume: number): void {
     setScreenVolumes((prev) => ({ ...prev, [id]: volume }));
+    prefsActions().setParticipantScreenVolume(id, volume);
     const participant = snapshot.remotes.find((r) => r.identity === id);
     if (participant) {
       participant.setVolume(volume, Track.Source.ScreenShareAudio);
     }
   }
+
+  // Apply saved screen-audio volumes whenever a remote subscribes.
+  useEffect(() => {
+    for (const remote of snapshot.remotes) {
+      const saved = persistedScreenVolumes[remote.identity];
+      if (saved !== undefined && saved !== 1) {
+        remote.setVolume(saved, Track.Source.ScreenShareAudio);
+      }
+    }
+  }, [snapshot.remotes, persistedScreenVolumes]);
 
   const tileCallbacks: TileCallbacks = {
     onClick: (id) => {

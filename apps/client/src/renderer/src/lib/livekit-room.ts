@@ -291,7 +291,25 @@ export class LiveKitRoom {
     this.room.on(RoomEvent.TrackSubscribed, () => this.emit());
     this.room.on(RoomEvent.TrackUnsubscribed, () => this.emit());
     this.room.on(RoomEvent.ActiveSpeakersChanged, () => this.emit());
-    this.room.on(RoomEvent.LocalTrackPublished, () => this.emit());
+    this.room.on(RoomEvent.LocalTrackPublished, (pub) => {
+      // Diagnostic — confirms what codec actually got negotiated. If the
+      // SFU rejects h264 the client falls back to vp8 silently and the
+      // 1.8 Mbps default cap kicks in → 1 fps blocky output. Log so we
+      // can see at a glance.
+      try {
+        const t = pub.track;
+        const mime = t?.mediaStreamTrack
+          ? (t.mediaStreamTrack.getSettings() as { mimeType?: string }).mimeType
+          : undefined;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[livekit] published ${pub.source} kind=${pub.kind} ` +
+            `codec=${pub.mimeType ?? mime ?? "unknown"} ` +
+            `dims=${pub.dimensions?.width ?? "?"}x${pub.dimensions?.height ?? "?"}`,
+        );
+      } catch { /* logging only */ }
+      this.emit();
+    });
     this.room.on(RoomEvent.LocalTrackUnpublished, () => this.emit());
     this.room.on(RoomEvent.ConnectionStateChanged, () => this.emit());
     this.room.on(RoomEvent.ConnectionQualityChanged, () => this.emit());
