@@ -30,6 +30,8 @@ export interface PrefsState {
   serverUrl: string;
   /** Room IDs the user has starred — surfaced by future Lobby UX. */
   favoriteRoomIds: string[];
+  /** Per-participant volume map (1.0 = unity). Persists across sessions. */
+  participantVolumes: Record<string, number>;
 
   setMicDeviceId(id: string | null): void;
   setSpeakerDeviceId(id: string | null): void;
@@ -50,6 +52,7 @@ export interface PrefsState {
   setMicGain(v: number): void;
   setServerUrl(u: string): void;
   toggleFavoriteRoom(id: string): void;
+  setParticipantVolume(id: string, volume: number): void;
 }
 
 const DEFAULTS = {
@@ -68,14 +71,15 @@ const DEFAULTS = {
   crashReporting: false,
   noiseSuppression: "low" as NoiseSuppressionLevel,
   echoCancellation: true,
-  // OFF by default — AGC is the most audible mic-processing change and
-  // surprises users who expect their Windows mic settings to be respected
-  // verbatim. Leave EC + NS on since those are nearly universally wanted
-  // (echo loops + background fans); user can turn either off in Settings.
-  autoGainControl: false,
+  // Software AGC ON by default — uses our Web Audio DynamicsCompressor
+  // pipeline (NOT Windows' AGC). Without this, quiet speakers come
+  // through too low because we ALSO disable Chromium's built-in AGC to
+  // avoid touching OS audio settings. User can flip off in Settings.
+  autoGainControl: true,
   micGain: 1.0,
   serverUrl: "https://voice.r3dwolfie.com",
   favoriteRoomIds: [] as string[],
+  participantVolumes: {} as Record<string, number>,
 };
 
 function load(storage: PrefsStorage): typeof DEFAULTS {
@@ -113,6 +117,7 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
       micGain: state.micGain,
       serverUrl: state.serverUrl,
       favoriteRoomIds: state.favoriteRoomIds,
+      participantVolumes: state.participantVolumes,
     };
     storage.write(JSON.stringify(payload));
   }
@@ -143,6 +148,10 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
         ? favoriteRoomIds.filter((x) => x !== id)
         : [...favoriteRoomIds, id];
       set({ favoriteRoomIds: next });
+      persistFromState(get());
+    },
+    setParticipantVolume: (id, volume) => {
+      set({ participantVolumes: { ...get().participantVolumes, [id]: volume } });
       persistFromState(get());
     },
   }));

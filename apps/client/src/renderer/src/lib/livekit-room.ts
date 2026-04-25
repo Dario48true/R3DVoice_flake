@@ -34,6 +34,11 @@ export interface RoomStateSnapshot {
   disconnectKind: DisconnectKind | null;
   /** True iff E2EE is currently active (room key has been set on the provider). */
   e2eeEnabled: boolean;
+  /**
+   * Per-participant RTT in milliseconds (latest value the peer has broadcast).
+   * Identity → ms. Local participant entry tracks our own RTT for symmetry.
+   */
+  rttByParticipant: Record<string, number>;
 }
 
 export type RoomStateListener = (state: RoomStateSnapshot) => void;
@@ -168,6 +173,9 @@ export class LiveKitRoom {
   private disconnectKind: DisconnectKind | null = null;
   private keyProvider: ExternalE2EEKeyProvider;
   private e2eeEnabled = false;
+  /** Latest RTT (ms) per participant identity. Updated via DataChannel pings. */
+  private rttByParticipant: Record<string, number> = {};
+  private rttBroadcastTimer: ReturnType<typeof setInterval> | null = null;
   // Cached snapshot — useSyncExternalStore compares by reference, so this must
   // stay stable between LiveKit events or React will loop forever.
   private cachedSnapshot: RoomStateSnapshot;
@@ -213,12 +221,53 @@ export class LiveKitRoom {
     this.room.on(RoomEvent.Connected, () => {
       this.connected = true;
       this.err = null;
+      // Start broadcasting our RTT to peers every 3 s so the sidebar can
+      // show each participant's own ping, not just ours. Tiny payload —
+      // negligible bandwidth.
+      if (this.rttBroadcastTimer) clearInterval(this.rttBroadcastTimer);
+      this.rttBroadcastTimer = setInterval(() => {
+        void this.broadcastOwnRtt();
+      }, 3000);
       this.emit();
     });
     this.room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
       this.connected = false;
       this.disconnectKind = mapDisconnectReason(reason);
+      if (this.rttBroadcastTimer) {
+        clearInterval(this.rttBroadcastTimer);
+        this.rttBroadcastTimer = null;
+      }
       this.emit();
+    });
+
+    // Track RTT broadcasts from peers and stash them in our snapshot.
+    this.room.on(
+      RoomEvent.DataReceived,
+      (payload: Uint8Array, participant?: RemoteParticipant) => {
+        if (!participant) return;
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(payload)) as {
+            kind?: string;
+            rttMs?: number;
+          };
+          if (msg.kind !== "rv:rtt" || typeof msg.rttMs !== "number") return;
+          this.rttByParticipant = {
+            ...this.rttByParticipant,
+            [participant.identity]: msg.rttMs,
+          };
+          this.emit();
+        } catch {
+          /* not for us */
+        }
+      },
+    );
+
+    this.room.on(RoomEvent.ParticipantDisconnected, (p) => {
+      if (p.identity in this.rttByParticipant) {
+        const next = { ...this.rttByParticipant };
+        delete next[p.identity];
+        this.rttByParticipant = next;
+      }
     });
     this.room.on(RoomEvent.ParticipantConnected, () => this.emit());
     this.room.on(RoomEvent.ParticipantDisconnected, () => this.emit());
@@ -253,7 +302,27 @@ export class LiveKitRoom {
       ) != null,
       disconnectKind: this.disconnectKind,
       e2eeEnabled: this.e2eeEnabled,
+      rttByParticipant: this.rttByParticipant,
     };
+  }
+
+  private async broadcastOwnRtt(): Promise<void> {
+    const stats = await this.getNetworkStats();
+    if (!stats || stats.rttMs == null) return;
+    const rttMs = Math.round(stats.rttMs);
+    // Mirror our own RTT into the snapshot so the local row shows the same
+    // metric as the per-peer rows (single rendering path).
+    this.rttByParticipant = {
+      ...this.rttByParticipant,
+      [this.room.localParticipant.identity]: rttMs,
+    };
+    this.emit();
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ kind: "rv:rtt", rttMs }));
+      await this.room.localParticipant.publishData(payload, { reliable: false });
+    } catch {
+      /* mid-disconnect or no peers; harmless */
+    }
   }
 
   /**

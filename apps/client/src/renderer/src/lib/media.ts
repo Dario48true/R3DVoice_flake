@@ -96,35 +96,34 @@ function nsPolicy(level: "off" | "low" | "high" | undefined): {
  * Processing options map onto Chromium's WebRTC audio constraints. "high" pushes
  * NS hard but stops short of bundling RNNoise — that's a future audio worklet job.
  */
-export async function openMicStream(
+export interface MicPipeline {
+  stream: MediaStream;
+  /** Live-tweak the user gain. ALWAYS available — the pipeline keeps a
+   *  GainNode in the chain even at unity so the slider can adjust without
+   *  re-opening the mic. */
+  setGain(gain: number): void;
+  /** Release AudioContexts. Call when the publish is done. */
+  close(): void;
+}
+
+export async function openMicPipeline(
   deviceId: string | undefined,
   options: MicProcessingOptions = {},
-): Promise<MediaStream> {
+): Promise<MicPipeline> {
   if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
     throw new Error("mic unavailable");
   }
-  // Always request a raw mic stream. Passing `false` to all three constraints
-  // tells Chromium "I don't want WebRTC's APM", which keeps us out of any
-  // codepath that might engage Windows-level audio enhancements / hardware
-  // DSP / "communications mode". All processing is done in our own Web
-  // Audio graph below, in software, scoped to this stream.
   const audioConstraints: MediaTrackConstraints = {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     noiseSuppression: false,
     echoCancellation: false,
     autoGainControl: false,
   };
-  const constraints: MediaStreamConstraints = {
-    audio: audioConstraints,
-    video: false,
-  };
-  let stream = await navigator.mediaDevices.getUserMedia(constraints);
+  let stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
 
   const policy = nsPolicy(options.noiseSuppression);
   if (policy.rnnoise) {
     try {
-      // Lazy-load so the ~1.5 MB WASM blob isn't pulled in for users who
-      // never touch noise suppression.
       const { applyRnnoise } = await import("./rnnoise-stream.js");
       stream = await applyRnnoise(stream);
     } catch (err) {
@@ -137,9 +136,38 @@ export async function openMicStream(
     stream = applySoftwareAgc(stream);
   }
 
-  const gain = options.gain ?? 1;
-  if (gain === 1) return stream;
-  return applyGain(stream, gain);
+  // Always wrap in a GainNode pipeline — even at unity. That way the user's
+  // gain slider can update the value live without re-opening the mic.
+  const ctx = new AudioContext();
+  const source = ctx.createMediaStreamSource(stream);
+  const gainNode = ctx.createGain();
+  gainNode.gain.value = options.gain ?? 1;
+  const dest = ctx.createMediaStreamDestination();
+  source.connect(gainNode).connect(dest);
+
+  return {
+    stream: dest.stream,
+    setGain: (g) => {
+      gainNode.gain.value = g;
+    },
+    close: () => {
+      try { source.disconnect(); } catch { /* */ }
+      try { gainNode.disconnect(); } catch { /* */ }
+      void ctx.close();
+    },
+  };
+}
+
+/**
+ * Backwards-compatible wrapper. Existing callers (PreJoin VU meter etc.)
+ * just want a MediaStream — they don't need gain control.
+ */
+export async function openMicStream(
+  deviceId: string | undefined,
+  options: MicProcessingOptions = {},
+): Promise<MediaStream> {
+  const p = await openMicPipeline(deviceId, options);
+  return p.stream;
 }
 
 /**
@@ -164,12 +192,3 @@ function applySoftwareAgc(stream: MediaStream): MediaStream {
   return dest.stream;
 }
 
-function applyGain(stream: MediaStream, gain: number): MediaStream {
-  const ctx = new AudioContext();
-  const source = ctx.createMediaStreamSource(stream);
-  const gainNode = ctx.createGain();
-  gainNode.gain.value = gain;
-  const dest = ctx.createMediaStreamDestination();
-  source.connect(gainNode).connect(dest);
-  return dest.stream;
-}

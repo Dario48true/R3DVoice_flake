@@ -11,7 +11,7 @@ import {
 } from "react";
 import { ApiClient } from "../lib/api.js";
 import { useAuthStore } from "../lib/auth-context.js";
-import { openMicStream } from "../lib/media.js";
+import { openMicPipeline, type MicPipeline } from "../lib/media.js";
 import {
   LiveKitRoom,
   RoomEvent,
@@ -369,6 +369,13 @@ function Tile({
             height: "100%",
             objectFit: sharing ? "contain" : "cover",
             background: "black",
+            // Mirror only the local self-view of the camera (not screenshare)
+            // so it reads like a mirror — raising your right hand shows on
+            // the screen's right. Other participants still receive the
+            // unmirrored feed.
+            ...(tile.isLocal && !sharing
+              ? { transform: "scaleX(-1)" }
+              : {}),
           }}
         />
       ) : (
@@ -502,13 +509,16 @@ function GridLayout({
   people: ParticipantView[];
   callbacks: TileCallbacks;
 }): ReactElement {
-  const cols = people.length <= 2 ? 2 : people.length <= 4 ? 2 : people.length <= 9 ? 3 : 4;
+  // auto-fit so the grid stays usable on portrait monitors AND when multiple
+  // people are sharing screen — tiles wrap naturally instead of getting
+  // squished into a fixed column count.
   return (
     <div
       style={{
         display: "grid",
         gap: "var(--s-3)",
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
+        alignContent: "start",
       }}
     >
       {people.map((p) => (
@@ -834,7 +844,8 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const roomWrapper = useMemo(() => new LiveKitRoom(), []);
   const [conn, setConn] = useState<ConnectionState>({ phase: "connecting" });
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
-  const [voiceVolumes, setVoiceVolumes] = useState<Record<string, number>>({});
+  const persistedParticipantVolumes = usePrefs((s) => s.participantVolumes);
+  const [voiceVolumes, setVoiceVolumes] = useState<Record<string, number>>(persistedParticipantVolumes);
   const [screenVolumes, setScreenVolumes] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<VolumeMenu | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -859,6 +870,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
   const audioMountRef = useRef<HTMLDivElement | null>(null);
   const e2eeSessionRef = useRef<RoomE2EE | null>(null);
+  const micPipelineRef = useRef<MicPipeline | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
@@ -895,14 +907,17 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         api.setToken(token);
         const { token: lkToken, url } = await api.mintLiveKitToken(props.roomId);
         if (cancelled) return;
-        const micStream = props.selection.micDeviceId
-          ? await openMicStream(props.selection.micDeviceId, {
-              noiseSuppression: micProcessing.noiseSuppression,
-              echoCancellation: micProcessing.echoCancellation,
-              autoGainControl: micProcessing.autoGainControl,
-              gain: micProcessing.gain,
-            })
-          : undefined;
+        let micStream: MediaStream | undefined;
+        if (props.selection.micDeviceId) {
+          const pipeline = await openMicPipeline(props.selection.micDeviceId, {
+            noiseSuppression: micProcessing.noiseSuppression,
+            echoCancellation: micProcessing.echoCancellation,
+            autoGainControl: micProcessing.autoGainControl,
+            gain: micProcessing.gain,
+          });
+          micPipelineRef.current = pipeline;
+          micStream = pipeline.stream;
+        }
 
         await roomWrapper.join({
           wsUrl: url,
@@ -1075,9 +1090,20 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       e2eeSessionRef.current.stop();
       e2eeSessionRef.current = null;
     }
+    if (micPipelineRef.current) {
+      micPipelineRef.current.close();
+      micPipelineRef.current = null;
+    }
     await roomWrapper.leave();
     props.onLeave();
   }
+
+  // Live-apply mic-gain pref changes: when the user moves the slider in
+  // Settings, the change reaches the published track via the GainNode in
+  // the MicPipeline without re-opening the mic.
+  useEffect(() => {
+    micPipelineRef.current?.setGain(micProcessing.gain);
+  }, [micProcessing.gain]);
 
   // Server-initiated disconnect (owner removed us, owner deleted the room,
   // server shutdown) — show a banner for a beat then bounce back to lobby.
@@ -1107,11 +1133,23 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
 
   function setVoiceVolume(id: string, volume: number): void {
     setVoiceVolumes((prev) => ({ ...prev, [id]: volume }));
+    prefsActions().setParticipantVolume(id, volume);
     const participant = snapshot.remotes.find((r) => r.identity === id);
     if (participant) {
       participant.setVolume(volume, Track.Source.Microphone);
     }
   }
+
+  // Apply saved per-participant volumes whenever a remote subscribes — keeps
+  // user-set volumes sticky across rejoins / new sessions.
+  useEffect(() => {
+    for (const remote of snapshot.remotes) {
+      const saved = persistedParticipantVolumes[remote.identity];
+      if (saved !== undefined && saved !== 1) {
+        remote.setVolume(saved, Track.Source.Microphone);
+      }
+    }
+  }, [snapshot.remotes, persistedParticipantVolumes]);
 
   function setScreenVolume(id: string, volume: number): void {
     setScreenVolumes((prev) => ({ ...prev, [id]: volume }));
@@ -1186,13 +1224,15 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const menuIsLocal = menuParticipant?.isLocal ?? false;
 
   // Speaker layout activates when: user picked it, user click-focused a tile,
-  // or auto + someone is sharing. focusedId is dropped if its participant left.
+  // or auto + EXACTLY ONE person is sharing. With 2+ sharers, fall through
+  // to grid so all shares get equal real estate. focusedId is dropped if
+  // its participant left.
   const focusedTileExists = focusedId !== null && tiles.some((t) => t.id === focusedId);
   const effectiveFocusedId = focusedTileExists ? focusedId : null;
   const useSpeaker =
     layout === "speaker" ||
     effectiveFocusedId !== null ||
-    (layout === "auto" && sharingParticipants.length > 0);
+    (layout === "auto" && sharingParticipants.length === 1);
   const focusSharer = sharingParticipants[0] ?? null;
 
   // Full-viewport maximized layout — no sidebar/topbar/control bar, single tile
@@ -1484,6 +1524,21 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
                       }}
                     >
                       {tileSharing ? "sharing" : tile.isSpeaking ? "speaking" : "idle"}
+                      {snapshot.rttByParticipant[tile.id] !== undefined && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            color:
+                              snapshot.rttByParticipant[tile.id]! < 150
+                                ? "var(--text-faint)"
+                                : snapshot.rttByParticipant[tile.id]! < 400
+                                  ? "var(--rv-amber)"
+                                  : "var(--accent-glow)",
+                          }}
+                        >
+                          · {Math.round(snapshot.rttByParticipant[tile.id]!)}ms
+                        </span>
+                      )}
                     </span>
                   </div>
                   {tile.muted ? (
