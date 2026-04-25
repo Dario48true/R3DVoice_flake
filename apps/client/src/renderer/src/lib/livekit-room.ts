@@ -46,18 +46,17 @@ export interface JoinOptions {
 }
 
 /**
- * Linux: try to capture system audio by grabbing a PulseAudio/PipeWire
- * "monitor" source via getUserMedia. PulseAudio (and PipeWire's PA emulation)
- * exposes monitor devices for every output sink, named like
- * "Monitor of …". Capturing a monitor gives us the full system mix.
+ * Linux: capture screenshare audio from a PulseAudio/PipeWire monitor source.
  *
- * Returns null if no monitor device is available or the user denied access.
+ * If `preferLabelContains` is given (e.g. "RedVoice Share Capture" set up
+ * by main's enableLinuxAudioRouting), prefer the monitor whose label
+ * contains it — that one excludes RedVoice's own playback. Otherwise fall
+ * back to any "Monitor of …" source (full system mix; will echo).
  */
-async function captureLinuxMonitorSource(): Promise<MediaStream | null> {
+async function captureLinuxMonitorSource(
+  preferLabelContains?: string,
+): Promise<MediaStream | null> {
   try {
-    // Device labels are blank until the page has audio permission. RedVoice
-    // already has it from the mic publish, but request() once defensively
-    // — it's a no-op if permission is already granted.
     let devices = await navigator.mediaDevices.enumerateDevices();
     if (devices.every((d) => d.label === "")) {
       try {
@@ -72,9 +71,12 @@ async function captureLinuxMonitorSource(): Promise<MediaStream | null> {
     );
     if (monitors.length === 0) return null;
 
-    // Prefer one tagged with "default" if PA exposes that hint; otherwise
-    // first match (typically the default sink's monitor).
-    const target = monitors.find((m) => /default/i.test(m.label)) ?? monitors[0]!;
+    let target: MediaDeviceInfo | undefined;
+    if (preferLabelContains) {
+      const needle = preferLabelContains.toLowerCase();
+      target = monitors.find((m) => m.label.toLowerCase().includes(needle));
+    }
+    target ??= monitors.find((m) => /default/i.test(m.label)) ?? monitors[0]!;
 
     return await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: { exact: target.deviceId } },
@@ -228,13 +230,33 @@ export class LiveKitRoom {
       console.log("[screenshare] system audio filtered via native helper (your voice excluded)");
     }
 
-    // 2. Linux PulseAudio/PipeWire monitor source
+    // 2. Linux: ask main to set up a virtual sink that excludes RedVoice's
+    //    playback, then capture from its monitor. Falls back to the full
+    //    system-mix monitor if pactl isn't available.
     if (!track && platform === "linux") {
-      auxStream = await captureLinuxMonitorSource();
+      let preferLabel: string | undefined;
+      let routingEnabled = false;
+      try {
+        const routing = await window.redvoice.enableLinuxAudioRouting();
+        if (routing) {
+          preferLabel = routing.monitorDeviceDescription;
+          routingEnabled = true;
+        }
+      } catch { /* */ }
+
+      auxStream = await captureLinuxMonitorSource(preferLabel);
       track = auxStream?.getAudioTracks()[0] ?? null;
       if (track) {
         // eslint-disable-next-line no-console
-        console.log("[screenshare] linux monitor source captured (system mix; use headphones to avoid echo)");
+        console.log(
+          routingEnabled
+            ? "[screenshare] linux: capturing redvoice_share.monitor — RedVoice playback excluded"
+            : "[screenshare] linux: capturing default monitor (system mix; use headphones to avoid echo)",
+        );
+      } else if (routingEnabled) {
+        // Capture failed even though routing was set up — tear it down so
+        // we don't leave the user's audio rerouted.
+        try { await window.redvoice.disableLinuxAudioRouting(); } catch { /* */ }
       }
     }
 
@@ -278,6 +300,7 @@ export class LiveKitRoom {
       this.screenAudioAuxStream = null;
     }
     await stopSystemAudioStream();
+    try { await window.redvoice?.disableLinuxAudioRouting?.(); } catch { /* */ }
     this.emit();
   }
 

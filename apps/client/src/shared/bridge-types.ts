@@ -76,6 +76,15 @@ export interface RedVoiceBridge {
   onSystemAudioChunk(cb: (chunk: Uint8Array) => void): () => void;
   /** Notified once when the helper exits (helper crashed or was stopped). */
   onSystemAudioEnded(cb: () => void): () => void;
+  /**
+   * Linux-only: set up routing so screenshare audio capture excludes
+   * RedVoice's own playback. Returns the monitor source description to find
+   * via enumerateDevices(), or null if PulseAudio is unavailable / setup
+   * failed. Idempotent.
+   */
+  enableLinuxAudioRouting(): Promise<{ monitorDeviceDescription: string } | null>;
+  /** Tear down the routing set up by enableLinuxAudioRouting. */
+  disableLinuxAudioRouting(): Promise<void>;
 }
 
 export interface SystemAudioFormat {

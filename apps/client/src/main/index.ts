@@ -6,6 +6,7 @@ import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.
 import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 import { initAutoUpdate } from "./auto-update.js";
 import { registerSystemAudioCaptureHandlers, stopSystemAudioCapture } from "./system-audio-capture.js";
+import { registerLinuxAudioRoutingHandlers } from "./linux-audio-routing.js";
 import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
 import {
   openSplashWindow,
@@ -246,6 +247,7 @@ app.whenReady().then(async () => {
   registerScreenPickerHandlers();
   registerDeepLinkHandlers();
   registerSystemAudioCaptureHandlers();
+  registerLinuxAudioRoutingHandlers();
   writeDesktopEntry();
 
   // Dev-only: REDVOICE_SPLASH_DEMO=1 cycles every splash phase slowly and
