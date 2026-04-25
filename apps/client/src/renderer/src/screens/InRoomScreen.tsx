@@ -369,6 +369,47 @@ function Tile({
           ◉ SHARING
         </div>
       )}
+
+      {sharing && (
+        <button
+          type="button"
+          aria-label="Picture-in-picture"
+          title="Picture-in-picture"
+          onClick={async (e) => {
+            e.stopPropagation();
+            const v = videoRef.current;
+            if (!v) return;
+            try {
+              if (document.pictureInPictureElement === v) {
+                await document.exitPictureInPicture();
+              } else {
+                await v.requestPictureInPicture();
+              }
+            } catch {
+              // PiP can fail if the video has no frame yet, or the OS denied.
+              // Silent — the user can try again.
+            }
+          }}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 28,
+            height: 28,
+            background: "color-mix(in oklch, var(--rv-ink-0) 70%, transparent)",
+            backdropFilter: "blur(8px)",
+            border: "1px solid var(--border-soft)",
+            borderRadius: 6,
+            color: "var(--text)",
+            cursor: "pointer",
+          }}
+        >
+          <I.Pip size={14} />
+        </button>
+      )}
     </div>
   );
 }

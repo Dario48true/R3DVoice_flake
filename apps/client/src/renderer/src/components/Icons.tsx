@@ -227,6 +227,15 @@ function Send({ size = 18, style, className }: IconProps): ReactElement {
   );
 }
 
+function Pip({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <rect x="3" y="4" width="18" height="14" rx="2" />
+      <rect x="12" y="11" width="7" height="5" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 // Monogram R Refined: bold custom-cut "R" on a red squircle with a record-dot
 // punched into the bowl. useId() for gradient IDs keeps SSR/hydration stable
 // across renders (replacing the original Math.random() suffix).
@@ -293,5 +302,6 @@ export const I = {
   Chat,
   Smile,
   Send,
+  Pip,
   Logo,
 };
