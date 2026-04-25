@@ -482,12 +482,18 @@ export class LiveKitRoom {
             degradationPreference: "maintain-framerate",
           },
         );
-        // LiveKit doesn't reliably propagate degradationPreference into the
-        // RTCRtpSender — re-apply it directly, plus crank the network
-        // priority. With BWE being conservative on a fast link (488 Mbps
-        // up with 5 ms ping but BWE stuck at ~1.3 Mbps), networkPriority
-        // tells the OS/QoS layer to prioritise this stream's packets and
-        // tells WebRTC's bandwidth allocator to favour it.
+        // v0.5.7 priority/degradation overrides didn't help: BWE crept to
+        // ~1.7 Mbps but encoded fps stayed at ~1 fps. Stats showed
+        // qLimit=bandwidth — meaning Chromium *isn't* downscaling
+        // resolution despite maintain-framerate, so the encoder is starving
+        // fps to keep 1080p quality. (Likely the MFT H.264 encoder path
+        // doesn't actually honour mid-stream resolution change.)
+        //
+        // Fix: pre-scale the encoder input via scaleResolutionDownBy. With
+        // 1080p input and scale=1.5 the wire stream is 720p — 720p60 H.264
+        // fits comfortably in ~1.5 Mbps even with quality margin, so BWE's
+        // budget is no longer the bottleneck. Local preview stays 1080p
+        // (preview is pre-scale).
         try {
           const screenPub = this.room.localParticipant.getTrackPublication(
             Track.Source.ScreenShare,
@@ -496,9 +502,13 @@ export class LiveKitRoom {
           if (sender) {
             const params = sender.getParameters();
             params.degradationPreference = "maintain-framerate";
+            // Only downscale if the source is actually high-res; a 720p
+            // share doesn't benefit from going to 480p.
+            const shouldScaleDown = q.width >= 1920 || q.height >= 1080;
             for (const enc of params.encodings ?? []) {
               enc.priority = "high";
               enc.networkPriority = "high";
+              if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5; // 1080p → 720p
             }
             await sender.setParameters(params);
             // eslint-disable-next-line no-console
@@ -506,8 +516,31 @@ export class LiveKitRoom {
               `[screenshare] sender params applied — ` +
                 `deg=${params.degradationPreference} ` +
                 `encPriority=${params.encodings?.[0]?.priority} ` +
-                `netPriority=${params.encodings?.[0]?.networkPriority}`,
+                `netPriority=${params.encodings?.[0]?.networkPriority} ` +
+                `scaleDownBy=${params.encodings?.[0]?.scaleResolutionDownBy ?? 1}`,
             );
+
+            // Periodically read params back — confirms whether LiveKit or
+            // the platform encoder is reverting our overrides.
+            const verifyHandle = setInterval(() => {
+              try {
+                const cur = sender.getParameters();
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[screenshare] params check — deg=${cur.degradationPreference} ` +
+                    `enc[0].scaleDownBy=${cur.encodings?.[0]?.scaleResolutionDownBy ?? 1} ` +
+                    `enc[0].active=${cur.encodings?.[0]?.active ?? true}`,
+                );
+              } catch { /* */ }
+            }, 5000);
+            // Stop verifying when this track is unpublished.
+            const onUnpub = (p: { source?: Track.Source }): void => {
+              if (p.source === Track.Source.ScreenShare) {
+                clearInterval(verifyHandle);
+                this.room.off(RoomEvent.LocalTrackUnpublished, onUnpub);
+              }
+            };
+            this.room.on(RoomEvent.LocalTrackUnpublished, onUnpub);
           }
         } catch (err) {
           // eslint-disable-next-line no-console
