@@ -737,12 +737,17 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const openSettingsKeybind = usePrefs((s) => s.openSettingsKeybind);
   const leaveRoomKeybind = usePrefs((s) => s.leaveRoomKeybind);
   const prefMic = usePrefs((s) => s.micDeviceId);
-  const micProcessing = usePrefs((s) => ({
-    noiseSuppression: s.noiseSuppression,
-    echoCancellation: s.echoCancellation,
-    autoGainControl: s.autoGainControl,
-    gain: s.micGain,
-  }));
+  // Select primitives individually — a selector that returns a fresh object
+  // literal triggers React #185 because useSyncExternalStore's Object.is
+  // snapshot check sees a new reference every render and loops forever.
+  const noiseSuppression = usePrefs((s) => s.noiseSuppression);
+  const echoCancellation = usePrefs((s) => s.echoCancellation);
+  const autoGainControl = usePrefs((s) => s.autoGainControl);
+  const micGain = usePrefs((s) => s.micGain);
+  const micProcessing = useMemo(
+    () => ({ noiseSuppression, echoCancellation, autoGainControl, gain: micGain }),
+    [noiseSuppression, echoCancellation, autoGainControl, micGain],
+  );
   useEffect(() => {
     if (conn.phase === "connected" && prefMic) {
       void roomWrapper.room.switchActiveDevice("audioinput", prefMic);
