@@ -305,6 +305,53 @@ export class LiveKitRoom {
       // case of slow SDP — covers screenshare which negotiates separately.
       setTimeout(reportCodec, 1500);
       setTimeout(reportCodec, 5000);
+
+      // Periodic stats sampling for video tracks — tells us why receivers
+      // see 1 fps despite H.264 being negotiated:
+      //   qualityLimitationReason="cpu"        → encoder CPU bound
+      //   qualityLimitationReason="bandwidth"  → BWE throttling (uplink)
+      //   high target_fps + low encoded_fps    → encoder dropping frames
+      //   high encoded_fps                     → problem is downstream (SFU / receiver)
+      if (pub.kind === "video") {
+        const t = pub.track as unknown as { sender?: RTCRtpSender } | undefined;
+        const sender = t?.sender;
+        if (sender?.getStats) {
+          const sample = async (): Promise<void> => {
+            try {
+              const stats = await sender.getStats();
+              for (const r of stats.values()) {
+                if (r.type !== "outbound-rtp" || r.kind !== "video") continue;
+                const reason = (r as { qualityLimitationReason?: string }).qualityLimitationReason ?? "?";
+                const encFps = (r as { framesPerSecond?: number }).framesPerSecond ?? 0;
+                const encImpl = (r as { encoderImplementation?: string }).encoderImplementation ?? "?";
+                const targetBr = (r as { targetBitrate?: number }).targetBitrate ?? 0;
+                const totalBytesSent = (r as { bytesSent?: number }).bytesSent ?? 0;
+                const framesSent = (r as { framesSent?: number }).framesSent ?? 0;
+                const framesEncoded = (r as { framesEncoded?: number }).framesEncoded ?? 0;
+                const droppedDueLimit =
+                  ((r as { qualityLimitationDurations?: Record<string, number> }).qualityLimitationDurations) ?? {};
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[stats:${pub.source}] enc=${encFps.toFixed(1)}fps impl=${encImpl} ` +
+                    `qLimit=${reason} targetBr=${(targetBr / 1000).toFixed(0)}kbps ` +
+                    `framesEncoded=${framesEncoded} framesSent=${framesSent} ` +
+                    `bytesSent=${(totalBytesSent / 1024).toFixed(0)}KB ` +
+                    `qLimitDur=${JSON.stringify(droppedDueLimit)}`,
+                );
+              }
+            } catch { /* */ }
+          };
+          const handle = setInterval(() => void sample(), 3000);
+          // Stop sampling on unpublish.
+          const onUnpub = (p: { trackSid?: string }): void => {
+            if (p.trackSid === pub.trackSid) {
+              clearInterval(handle);
+              this.room.off(RoomEvent.LocalTrackUnpublished, onUnpub);
+            }
+          };
+          this.room.on(RoomEvent.LocalTrackUnpublished, onUnpub);
+        }
+      }
       this.emit();
     });
     this.room.on(RoomEvent.LocalTrackUnpublished, () => this.emit());
