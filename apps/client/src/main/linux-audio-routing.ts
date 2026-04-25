@@ -140,10 +140,19 @@ function labelForNode(n: Record<string, string>): string {
     .replace(/\.(bin|exe)$/i, "")
     .trim();
   const node = n["node.name"]?.trim() ?? "";
+
+  // PipeWire's pipewire-alsa bridge wraps ALSA-using apps as
+  // "ALSA plug-in [<exe>]". Extract the inner exe name — that's what the
+  // user actually recognizes (osu!, wine, etc.).
+  const wrapped = /^(?:ALSA plug-in|JACK|PulseAudio)\s*\[([^\]]+)\]/i.exec(app);
+  if (wrapped?.[1]) {
+    return wrapped[1].replace(/\.(bin|exe)$/i, "").trim();
+  }
+
   // Electron / Mozilla apps all expose application.name === "Chromium" /
   // "Mozilla", which is useless as a picker label. Fall back to the binary
   // name (or node.name) so the user sees "vesktop", "discord", "obs", etc.
-  if (!app || /^(chromium|electron|mozilla|webkit)$/i.test(app)) {
+  if (!app || /^(chromium|electron|mozilla|webkit|alsa[- ]plug[- ]?in)$/i.test(app)) {
     return binary || node || app || "Unknown";
   }
   return app;
@@ -188,13 +197,25 @@ export function listLinuxAudioSources(): AudioSourceSummary[] {
     const seen = new Set<string>();
     const out: AudioSourceSummary[] = [];
     for (const n of nodes) {
-      if (n["media.class"] !== "Stream/Output/Audio") continue;
+      // Skip mic-input streams — we never want to "share" the mic via
+      // screen audio. Everything else (output streams, sinks, ALSA bridge
+      // adapters) stays in. Matches Vesktop's behavior — they don't gate
+      // by media.class either, and that's why they catch osu! / native
+      // games where we previously didn't.
+      if (n["media.class"] === "Stream/Input/Audio") continue;
+      // Hardware devices (Audio/Sink, Audio/Source) leak into the list
+      // when we drop the strict filter. Skip them — the user can't
+      // usefully share "the speakers" as an app, and link() ignores
+      // devices anyway.
+      const cls = n["media.class"] ?? "";
+      if (cls.startsWith("Audio/Sink") || cls.startsWith("Audio/Source")) continue;
+      if (cls === "Audio/Duplex") continue;
+
       if (isRedVoice(n)) continue;
       const label = labelForNode(n);
+      if (!label || label === "Unknown") continue;
       const nodeName = n["node.name"] ?? "";
       const processId = n["application.process.id"] ?? "";
-      // Dedupe by friendly label + pid so the same app at one PID with
-      // multiple internal streams (e.g. WebRTC + media element) shows once.
       const key = `${label}::${processId}`;
       if (seen.has(key)) continue;
       seen.add(key);
