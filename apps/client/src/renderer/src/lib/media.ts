@@ -73,6 +73,23 @@ export interface MicProcessingOptions {
   gain?: number;
 }
 
+/** Pref level → mapping the actual pipeline applies. */
+function nsPolicy(level: "off" | "low" | "high" | undefined): {
+  browserNs: boolean;
+  rnnoise: boolean;
+} {
+  switch (level ?? "low") {
+    case "off":
+      return { browserNs: false, rnnoise: false };
+    case "low":
+      return { browserNs: true, rnnoise: false };
+    case "high":
+      // Browser NS handles AEC + DC drift; RNNoise on top kills steady noise
+      // (fans, room hum, keyboard). Heavier CPU, materially better quality.
+      return { browserNs: true, rnnoise: true };
+  }
+}
+
 /**
  * Ask for mic access and return a stream from the given device. Throws on denial.
  * Processing options map onto Chromium's WebRTC audio constraints. "high" pushes
@@ -85,10 +102,10 @@ export async function openMicStream(
   if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
     throw new Error("mic unavailable");
   }
-  const ns = options.noiseSuppression ?? "low";
+  const policy = nsPolicy(options.noiseSuppression);
   const audioConstraints: MediaTrackConstraints = {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-    noiseSuppression: ns !== "off",
+    noiseSuppression: policy.browserNs,
     echoCancellation: options.echoCancellation ?? true,
     autoGainControl: options.autoGainControl ?? true,
   };
@@ -96,10 +113,25 @@ export async function openMicStream(
     audio: audioConstraints,
     video: false,
   };
-  const raw = await navigator.mediaDevices.getUserMedia(constraints);
+  let stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+  if (policy.rnnoise) {
+    try {
+      // Lazy-load so the ~1.5 MB WASM blob isn't pulled in for users who
+      // never touch noise suppression "high".
+      const { applyRnnoise } = await import("./rnnoise-stream.js");
+      stream = await applyRnnoise(stream);
+    } catch (err) {
+      // RNNoise failed to set up (worklet/WASM load error) — fall back to
+      // the browser-default mic stream rather than dropping mic entirely.
+      // eslint-disable-next-line no-console
+      console.warn("[mic] RNNoise unavailable, using browser-default NS:", err);
+    }
+  }
+
   const gain = options.gain ?? 1;
-  if (gain === 1) return raw;
-  return applyGain(raw, gain);
+  if (gain === 1) return stream;
+  return applyGain(stream, gain);
 }
 
 function applyGain(stream: MediaStream, gain: number): MediaStream {
