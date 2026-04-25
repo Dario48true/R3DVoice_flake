@@ -29,8 +29,13 @@ export interface ScreenShareQuality {
   height: number;
   /** Frames per second (30 or 60). */
   frameRate: number;
-  /** If true, also capture system audio alongside the screen video. */
-  audio: boolean;
+  /**
+   * Audio source to share alongside video:
+   *   null  → silent share
+   *   "all" → every app's audio except RedVoice's own
+   *   "<pid>" → only this process's audio
+   */
+  audioSource: null | "all" | string;
 }
 
 export interface JoinOptions {
@@ -255,8 +260,10 @@ export class LiveKitRoom {
             videoCodec: "vp8",
           },
         );
-        if (q.audio) {
-          await this.enableScreenShareAudio();
+        if (q.audioSource !== null) {
+          await this.enableScreenShareAudio(
+            q.audioSource === "all" ? undefined : q.audioSource,
+          );
         }
       } else {
         await this.room.localParticipant.setScreenShareEnabled(true);

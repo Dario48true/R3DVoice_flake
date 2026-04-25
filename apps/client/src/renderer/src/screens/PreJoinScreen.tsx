@@ -16,7 +16,13 @@ export interface ScreenQuality {
   width: number;
   height: number;
   frameRate: number;
-  audio: boolean;
+  /**
+   * Audio source for the screenshare:
+   *   null  → no audio (silent share)
+   *   "all" → every app's audio except RedVoice's own playback
+   *   "<pid>" → only this process's audio (per-app capture)
+   */
+  audioSource: null | "all" | string;
 }
 
 export interface PreJoinSelection {
@@ -44,7 +50,6 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   const persistedSpeaker = usePrefs((s) => s.speakerDeviceId);
   const persistedResolution = usePrefs((s) => s.resolution);
   const persistedFrameRate = usePrefs((s) => s.frameRate);
-  const persistedShareAudio = usePrefs((s) => s.shareAudio);
   const noiseSuppression = usePrefs((s) => s.noiseSuppression);
   const echoCancellation = usePrefs((s) => s.echoCancellation);
   const autoGainControl = usePrefs((s) => s.autoGainControl);
@@ -57,7 +62,40 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   const [publishScreen, setPublishScreen] = useState(false);
   const [resolution, setResolution] = useState<keyof typeof RESOLUTIONS>(persistedResolution);
   const [frameRate, setFrameRate] = useState<30 | 60>(persistedFrameRate);
-  const [shareAudio, setShareAudio] = useState(persistedShareAudio);
+  // Audio source for the screen share: null=none, "all"=all-except-self, "<pid>"=specific app.
+  const [audioSource, setAudioSource] = useState<null | "all" | string>(null);
+  const [audioSources, setAudioSources] = useState<Array<{ pid: string; label: string }>>([]);
+  const [audioSourcesLoading, setAudioSourcesLoading] = useState(false);
+
+  const refreshAudioSources = async (): Promise<void> => {
+    const platform = window.redvoice?.platform();
+    if (platform !== "linux" && platform !== "win32") {
+      setAudioSources([]);
+      return;
+    }
+    setAudioSourcesLoading(true);
+    try {
+      if (platform === "linux") {
+        const list = await window.redvoice.listLinuxAudioSources();
+        setAudioSources(list.map((s) => ({ pid: s.processId, label: s.appName })));
+      } else {
+        const list = await window.redvoice.listWindowsAudioSessions();
+        setAudioSources(
+          list.map((s) => ({
+            pid: String(s.pid),
+            label: s.displayName?.trim() || s.imageName.replace(/\.exe$/i, ""),
+          })),
+        );
+      }
+    } finally {
+      setAudioSourcesLoading(false);
+    }
+  };
+
+  // Refresh whenever the user toggles the share-screen panel open.
+  useEffect(() => {
+    if (publishScreen) void refreshAudioSources();
+  }, [publishScreen]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [level, setLevel] = useState(0);
@@ -133,7 +171,7 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
         width: res.width,
         height: res.height,
         frameRate,
-        audio: shareAudio,
+        audioSource,
       },
     });
   }
@@ -345,32 +383,52 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
                   suffix=" fps"
                 />
               </Field>
-              <label className="rv-check" style={{ gridColumn: "1 / -1" }}>
-                <input
-                  type="checkbox"
-                  checked={shareAudio}
+              <Field
+                label="Audio sources"
+                right={
+                  <button
+                    type="button"
+                    className="rv-btn"
+                    data-variant="ghost"
+                    onClick={() => void refreshAudioSources()}
+                    title="Refresh app list"
+                    disabled={audioSourcesLoading}
+                    style={{ height: "1.6rem", padding: "0 var(--s-2)", fontSize: "var(--t-xs)" }}
+                  >
+                    {audioSourcesLoading ? "…" : "Refresh"}
+                  </button>
+                }
+              >
+                <select
+                  className="rv-select"
+                  value={audioSource ?? "none"}
                   onChange={(e) => {
-                    const v = e.target.checked;
-                    setShareAudio(v);
-                    prefsActions().setShareAudio(v);
+                    const v = e.target.value;
+                    setAudioSource(v === "none" ? null : v);
                   }}
-                />
-                <span className="rv-check-box" />
-                <span>
-                  Include system audio
-                  {IS_MAC && (
-                    <span
-                      style={{
-                        color: "var(--text-faint)",
-                        fontSize: "var(--t-xs)",
-                        marginLeft: "var(--s-2)",
-                      }}
-                    >
-                      (macOS asks for permission once)
-                    </span>
-                  )}
-                </span>
-              </label>
+                >
+                  <option value="none">None</option>
+                  <option value="all">All apps (except RedVoice)</option>
+                  {audioSources.length > 0 && <option disabled>──────────</option>}
+                  {audioSources.map((s) => (
+                    <option key={s.pid} value={s.pid}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                {IS_MAC && (
+                  <span
+                    style={{
+                      color: "var(--text-faint)",
+                      fontSize: "var(--t-xs)",
+                      marginTop: 4,
+                      display: "block",
+                    }}
+                  >
+                    macOS may ask for screen-recording permission once.
+                  </span>
+                )}
+              </Field>
             </div>
           </div>
         </div>
