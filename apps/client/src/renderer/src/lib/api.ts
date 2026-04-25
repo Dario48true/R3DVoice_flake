@@ -3,7 +3,7 @@ import type {
   CreateRoomRequest,
   LoginRequest,
   LoginResponse,
-  RegisterRequest,
+  RegisterRequest as _SharedRegisterRequest,
   RoomDTO,
   RoomListResponse,
   UserDTO,
@@ -90,9 +90,15 @@ export class ApiClient {
     return payload as TRes;
   }
 
-  // Auth
-  register(body: RegisterRequest): Promise<AuthResponse> {
+  // Auth — register payload allows an optional E2EE public key.
+  register(body: _SharedRegisterRequest & { e2eePublicKey?: string }): Promise<AuthResponse> {
     return this.request("POST", "/auth/register", body);
+  }
+  setE2eePublicKey(e2eePublicKey: string): Promise<void> {
+    return this.request("POST", "/auth/e2ee/public-key", { e2eePublicKey });
+  }
+  getUserPublicKey(userId: string): Promise<{ id: string; displayName: string; publicKey: string | null }> {
+    return this.request("GET", `/users/${encodeURIComponent(userId)}/public-key`);
   }
   login(body: LoginRequest): Promise<LoginResponse> {
     return this.request("POST", "/auth/login", body);

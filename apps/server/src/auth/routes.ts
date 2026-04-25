@@ -13,6 +13,10 @@ const registerBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(12, "password must be at least 12 characters"),
   displayName: z.string().min(1).max(50),
+  // Base64-encoded X25519 public key (32 bytes raw → 44 chars base64).
+  // Generated client-side via tweetnacl. Server stores as-is and never sees
+  // the private half.
+  e2eePublicKey: z.string().min(40).max(60).optional(),
 });
 
 const loginBodySchema = z.object({
@@ -33,12 +37,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       if (!parsed.success) {
         throw new ValidationError(parsed.error.issues[0]?.message ?? "invalid input");
       }
-      const { email, password, displayName } = parsed.data;
+      const { email, password, displayName, e2eePublicKey } = parsed.data;
       const passwordHash = await hashPassword(password);
       let user;
       try {
         user = await prisma.user.create({
-          data: { email, displayName, passwordHash },
+          data: {
+            email,
+            displayName,
+            passwordHash,
+            ...(e2eePublicKey && { e2eePublicKey }),
+          },
         });
       } catch (err) {
         // P2002 = Prisma unique-constraint violation (here: User.email)
@@ -138,8 +147,49 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       email: user.email,
       displayName: user.displayName,
       totpEnabled: user.totpEnabledAt !== null,
+      hasE2eeKey: user.e2eePublicKey !== null,
     };
   });
+
+  // Public lookup endpoint: returns just the public key (or null) for sending
+  // E2EE messages to a known user-id. No PII beyond what /me returns.
+  app.get(
+    "/users/:id/public-key",
+    { preHandler: requireAuth },
+    async (request) => {
+      const id = (request.params as { id?: string }).id;
+      if (!id) throw new ValidationError("missing id");
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, displayName: true, e2eePublicKey: true },
+      });
+      if (!user) throw new AuthError("user not found");
+      return {
+        id: user.id,
+        displayName: user.displayName,
+        publicKey: user.e2eePublicKey,
+      };
+    },
+  );
+
+  // Enroll/update the current user's E2EE public key. Used when a logged-in
+  // user generates (or re-imports) their keypair on a new device.
+  const setKeyBodySchema = z.object({
+    e2eePublicKey: z.string().min(40).max(60),
+  });
+  app.post(
+    "/auth/e2ee/public-key",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const parsed = setKeyBodySchema.safeParse(request.body);
+      if (!parsed.success) throw new ValidationError("invalid public key");
+      await prisma.user.update({
+        where: { id: request.auth!.userId },
+        data: { e2eePublicKey: parsed.data.e2eePublicKey },
+      });
+      reply.status(204).send();
+    },
+  );
 
   app.post("/auth/logout", { preHandler: requireAuth }, async (request, reply) => {
     await prisma.session.update({

@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { UserDTO } from "@redvoice/shared";
 import { ApiClient, ApiError } from "./api.js";
+import { ensureKeyPair, downloadKeyBackup, clearKeyPair } from "./key-storage.js";
 
 export interface AuthStorageAdapter {
   saveToken(token: string): Promise<void>;
@@ -90,10 +91,22 @@ export function createAuthStore(
     async register(email, password, displayName) {
       set({ status: "loading", error: null });
       try {
-        const { token, user } = await api.register({ email, password, displayName });
+        // Generate the E2EE keypair locally before hitting the server. The
+        // server only receives the public half; the secret stays on the
+        // device + an offered downloadable backup the user must save.
+        const kp = ensureKeyPair();
+        const { token, user } = await api.register({
+          email,
+          password,
+          displayName,
+          e2eePublicKey: kp.publicKey,
+        });
         api.setToken(token);
         await storage.saveToken(token);
         set({ status: "authenticated", token, user, error: null });
+        // Trigger the backup download. User decides whether to save it; if
+        // they don't, losing this device = losing DM history.
+        downloadKeyBackup(email, kp);
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "register failed";
         set({ status: "unauthenticated", error: message });
@@ -111,6 +124,10 @@ export function createAuthStore(
       }
       api.setToken(null);
       await storage.clearToken();
+      // Don't clear the E2EE keypair on logout — same user signing back in
+      // on this device should still decrypt their old DMs. Use clearKeyPair()
+      // explicitly during a "switch user / forget me" flow.
+      void clearKeyPair; // marker for future use
       set({ status: "unauthenticated", token: null, user: null, error: null, twoFactorToken: null });
     },
 

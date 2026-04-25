@@ -37,6 +37,7 @@ describe("GET /me and POST /auth/logout", () => {
       email: user.email,
       displayName: user.displayName,
       totpEnabled: false,
+      hasE2eeKey: false,
     });
   });
 

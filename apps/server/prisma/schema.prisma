@@ -17,6 +17,11 @@ model User {
   totpSecret    String?
   totpEnabledAt DateTime?
 
+  // Base64-encoded X25519 public key for E2EE DMs. Generated client-side at
+  // register; the matching private key never reaches the server. Optional
+  // because legacy accounts created before E2EE shipped won't have one.
+  e2eePublicKey String?
+
   sessions      Session[]
   ownedRooms    Room[]           @relation("RoomOwner")
   memberships   RoomMembership[]

@@ -2,7 +2,7 @@
   "name": "redvoice",
   "private": true,
   "version": "0.1.0",
-  "description": "Open-source, self-hostable, Discord-style screenshare + voice chat (Electron + LiveKit)",
+  "description": "Open-source, self-hostable voice + screenshare for friends (Electron + LiveKit)",
   "license": "AGPL-3.0-or-later",
   "author": "R3dWolfie",
   "repository": {
