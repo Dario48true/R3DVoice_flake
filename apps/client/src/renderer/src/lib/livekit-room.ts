@@ -5,9 +5,11 @@ import {
   type RemoteParticipant,
   type LocalParticipant,
   Track,
+  type LocalTrackPublication,
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
+import { startSystemAudioStream, stopSystemAudioStream } from "./system-audio-stream.js";
 
 export interface RoomStateSnapshot {
   connected: boolean;
@@ -50,6 +52,9 @@ export class LiveKitRoom {
   // Cached snapshot — useSyncExternalStore compares by reference, so this must
   // stay stable between LiveKit events or React will loop forever.
   private cachedSnapshot: RoomStateSnapshot;
+  // Publication for the filtered screenshare-audio track, when the native
+  // filter is in use. Held so we can unpublish it on leave.
+  private filteredScreenAudioPub: LocalTrackPublication | null = null;
 
   constructor() {
     // dynacast disabled — it changes simulcast layer counts at runtime and
@@ -131,12 +136,45 @@ export class LiveKitRoom {
     if (options.publishScreen) {
       const q = options.screenQuality;
       if (q) {
+        // When the user wants system audio along with the share, try the
+        // native filtered capture first (Windows + helper available). It
+        // captures the system mix EXCLUDING our own process tree, so
+        // remote voices we're playing back don't bleed into the share.
+        // Fall back to the browser's getDisplayMedia({audio:true}) when
+        // the helper isn't available.
+        let filteredAudio: MediaStreamTrack | null = null;
+        if (q.audio) {
+          try {
+            const stream = await startSystemAudioStream();
+            filteredAudio = stream?.getAudioTracks()[0] ?? null;
+          } catch {
+            filteredAudio = null;
+          }
+          // Surface in DevTools so it's easy to confirm the filter activated.
+          // eslint-disable-next-line no-console
+          console.log(
+            filteredAudio
+              ? "[screenshare] system audio filtered via native helper (your voice excluded)"
+              : "[screenshare] system audio NOT filtered — others may hear themselves; use headphones",
+          );
+        }
+
         await this.room.localParticipant.setScreenShareEnabled(true, {
           resolution: { width: q.width, height: q.height, frameRate: q.frameRate },
-          audio: q.audio,
-          systemAudio: q.audio ? "include" : "exclude",
+          // If we got a filtered audio track, capture video only and we'll
+          // publish the audio separately below. Otherwise let the browser
+          // capture system audio inline (the existing path).
+          audio: q.audio && !filteredAudio,
+          systemAudio: q.audio && !filteredAudio ? "include" : "exclude",
           contentHint: "motion",
         });
+
+        if (filteredAudio) {
+          this.filteredScreenAudioPub = await this.room.localParticipant.publishTrack(
+            filteredAudio,
+            { source: Track.Source.ScreenShareAudio },
+          );
+        }
       } else {
         await this.room.localParticipant.setScreenShareEnabled(true);
       }
@@ -159,6 +197,11 @@ export class LiveKitRoom {
   }
 
   async leave(): Promise<void> {
+    if (this.filteredScreenAudioPub?.track) {
+      try { await this.room.localParticipant.unpublishTrack(this.filteredScreenAudioPub.track); } catch { /* */ }
+      this.filteredScreenAudioPub = null;
+    }
+    await stopSystemAudioStream();
     await this.room.disconnect();
     this.connected = false;
     this.emit();

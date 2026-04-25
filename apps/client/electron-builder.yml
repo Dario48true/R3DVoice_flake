@@ -47,6 +47,13 @@ win:
         - x64
   icon: build/icon.png
   artifactName: ${productName}-Setup.${ext}
+  extraResources:
+    # Native WASAPI process-loopback helper. Built by .github/workflows/release.yml
+    # and staged at build/native/ before electron-builder runs. Main process spawns
+    # this binary to capture system audio while EXCLUDING the RedVoice process tree
+    # (so screenshare audio doesn't include voices we're playing back from the call).
+    - from: build/native/system-audio-capture.exe
+      to: system-audio-capture.exe
 
 nsis:
   oneClick: false

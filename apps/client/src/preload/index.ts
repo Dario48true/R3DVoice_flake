@@ -37,6 +37,19 @@ const bridge: RedVoiceBridge = {
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
   setCrashReporting: (enabled) => ipcRenderer.invoke("app:set-crash-reporting", enabled),
   openCrashDumps: () => ipcRenderer.invoke("app:open-crash-dumps"),
+  startSystemAudioCapture: () => ipcRenderer.invoke("system-audio:start"),
+  stopSystemAudioCapture: () => ipcRenderer.invoke("system-audio:stop"),
+  systemAudioFormat: () => ipcRenderer.invoke("system-audio:format"),
+  onSystemAudioChunk: (cb) => {
+    const handler = (_evt: Electron.IpcRendererEvent, chunk: Uint8Array): void => cb(chunk);
+    ipcRenderer.on("system-audio:chunk", handler);
+    return () => ipcRenderer.off("system-audio:chunk", handler);
+  },
+  onSystemAudioEnded: (cb) => {
+    const handler = (): void => cb();
+    ipcRenderer.on("system-audio:ended", handler);
+    return () => ipcRenderer.off("system-audio:ended", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("redvoice", bridge);

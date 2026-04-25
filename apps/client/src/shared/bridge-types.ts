@@ -61,6 +61,27 @@ export interface RedVoiceBridge {
   setCrashReporting(enabled: boolean): Promise<void>;
   /** Open the OS file manager at the local crash-dump directory. */
   openCrashDumps(): Promise<void>;
+  /**
+   * Start the native system-audio capture helper (Windows-only). Resolves to
+   * "started" when the helper is producing PCM, or "unsupported" if the
+   * binary isn't bundled / OS build doesn't support PROCESS_LOOPBACK_MODE /
+   * activation failed. Use `onSystemAudioChunk` to receive PCM frames.
+   */
+  startSystemAudioCapture(): Promise<"started" | "unsupported">;
+  /** Stop a running system-audio capture session. No-op if none. */
+  stopSystemAudioCapture(): Promise<void>;
+  /** PCM format the helper emits — needed to reconstruct a MediaStream. */
+  systemAudioFormat(): Promise<SystemAudioFormat>;
+  /** Subscribe to PCM chunks from the helper. Returns an unsubscribe. */
+  onSystemAudioChunk(cb: (chunk: Uint8Array) => void): () => void;
+  /** Notified once when the helper exits (helper crashed or was stopped). */
+  onSystemAudioEnded(cb: () => void): () => void;
+}
+
+export interface SystemAudioFormat {
+  sampleRate: number;
+  channels: number;
+  bitsPerSample: number;
 }
 
 export type DeepLinkEvent = { type: "join-room"; roomId: string };

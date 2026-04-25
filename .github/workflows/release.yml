@@ -42,6 +42,20 @@ jobs:
       - name: Build server
         run: pnpm --filter @redvoice/server build
 
+      - name: Setup MSBuild (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build native system-audio-capture helper (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        working-directory: apps/client/native/system-audio-capture-win
+        run: |
+          nuget restore SystemAudioCapture.sln -PackagesDirectory packages
+          msbuild SystemAudioCapture.vcxproj /p:Configuration=Release /p:Platform=x64 /p:WarningLevel=2
+          New-Item -ItemType Directory -Force -Path ../../build/native | Out-Null
+          Copy-Item x64/Release/system-audio-capture.exe ../../build/native/system-audio-capture.exe -Force
+
       - name: Build client
         run: pnpm --filter @redvoice/client run build
 
