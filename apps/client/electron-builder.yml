@@ -19,6 +19,16 @@ linux:
   category: Network
   icon: build/icon.png
   artifactName: ${productName}-${version}-${arch}.${ext}
+  # Override the executable name away from the sanitized package name
+  # (@redvoiceclient). Affects WMClass matching + .desktop lookups.
+  executableName: redvoice
+  desktop:
+    entry:
+      Name: RedVoice
+      Comment: Open-source screenshare + voice chat
+      Categories: Network;Chat;AudioVideo;
+      StartupWMClass: RedVoice
+      MimeType: x-scheme-handler/redvoice;
 
 win:
   target:

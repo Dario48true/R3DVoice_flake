@@ -7,6 +7,13 @@ import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 import { initAutoUpdate } from "./auto-update.js";
 import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
 
+// Force app name / WMClass to "RedVoice" so Plasma/GNOME taskbars match this
+// window to ~/.local/share/applications/redvoice.desktop instead of falling
+// back to the AppImage's bundled @redvoiceclient.desktop (which lives inside
+// a temporary mount that vanishes on exit).
+app.setName("RedVoice");
+app.commandLine.appendSwitch("class", "RedVoice");
+
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
 
