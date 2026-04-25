@@ -46,6 +46,7 @@ interface ParticipantView {
   isLocal: boolean;
   muted: boolean;
   screenTrack: Track | null;
+  cameraTrack: Track | null;
   /** LiveKit ConnectionQuality string: "unknown"|"poor"|"good"|"excellent"|"lost". */
   quality: string;
 }
@@ -102,6 +103,15 @@ function hasScreenShare(p: LocalParticipant | null): boolean {
     if (pub.source === Track.Source.ScreenShare) return true;
   }
   return false;
+}
+
+function findCameraTrack(p: LocalParticipant | RemoteParticipant): Track | null {
+  for (const pub of p.trackPublications.values()) {
+    if (pub.source === Track.Source.Camera && pub.track) {
+      return pub.track;
+    }
+  }
+  return null;
 }
 
 // Best-effort remote-mic-muted check via audio publication state. Defaults to
@@ -249,18 +259,19 @@ function Tile({
   callbacks: TileCallbacks;
 }): ReactElement {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const camRef = useRef<HTMLVideoElement | null>(null);
   const sharing = tile.screenTrack !== null;
+  // Primary track to attach: screen if sharing, else camera. Camera-as-PiP-overlay
+  // when both is rendered separately via camRef below.
+  const primaryTrack = tile.screenTrack ?? tile.cameraTrack;
+  const showCameraOverlay = sharing && tile.cameraTrack !== null;
 
   useEffect(() => {
     const el = videoRef.current;
-    const track = tile.screenTrack;
-    if (!el || !track) return;
-    track.attach(el);
-    // HiDPI: declare the source's intrinsic size so CSS `object-fit` can scale
-    // without upscaling blur. Track settings may not be available immediately,
-    // so re-check once after attach.
+    if (!el || !primaryTrack) return;
+    primaryTrack.attach(el);
     const applyDimensions = (): void => {
-      const settings = track.mediaStreamTrack.getSettings();
+      const settings = primaryTrack.mediaStreamTrack.getSettings();
       if (settings.width && settings.height) {
         el.width = settings.width;
         el.height = settings.height;
@@ -270,9 +281,19 @@ function Tile({
     const retry = setTimeout(applyDimensions, 500);
     return () => {
       clearTimeout(retry);
+      primaryTrack.detach(el);
+    };
+  }, [primaryTrack]);
+
+  useEffect(() => {
+    const el = camRef.current;
+    const track = tile.cameraTrack;
+    if (!el || !track || !showCameraOverlay) return;
+    track.attach(el);
+    return () => {
       track.detach(el);
     };
-  }, [tile.screenTrack]);
+  }, [tile.cameraTrack, showCameraOverlay]);
 
   function onContextMenu(e: MouseEvent): void {
     e.preventDefault();
@@ -315,18 +336,44 @@ function Tile({
         cursor: "pointer",
       }}
     >
-      {sharing ? (
+      {primaryTrack ? (
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted={tile.isLocal}
-          style={{ width: "100%", height: "100%", objectFit: "contain", background: "black" }}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: sharing ? "contain" : "cover",
+            background: "black",
+          }}
         />
       ) : (
         <span className="rv-avatar" data-tone={toneOf(tile.id)} data-size={big ? "xl" : "lg"}>
           {tile.name.charAt(0).toUpperCase() || "?"}
         </span>
+      )}
+
+      {showCameraOverlay && (
+        <video
+          ref={camRef}
+          autoPlay
+          playsInline
+          muted={tile.isLocal}
+          style={{
+            position: "absolute",
+            top: 8,
+            left: 8,
+            width: "22%",
+            aspectRatio: "16/9",
+            borderRadius: "var(--r-md)",
+            border: "1px solid var(--border)",
+            objectFit: "cover",
+            background: "black",
+            boxShadow: "var(--shadow-2)",
+          }}
+        />
       )}
 
       {tile.isSpeaking && !sharing && (
@@ -772,6 +819,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       isLocal: true,
       muted,
       screenTrack: findScreenTrack(snapshot.local),
+      cameraTrack: findCameraTrack(snapshot.local),
       quality: snapshot.local.connectionQuality ?? "unknown",
     });
   }
@@ -783,11 +831,13 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       isLocal: false,
       muted: isRemoteMuted(remote),
       screenTrack: findScreenTrack(remote),
+      cameraTrack: findCameraTrack(remote),
       quality: remote.connectionQuality ?? "unknown",
     });
   }
 
   const sharing = hasScreenShare(snapshot.local);
+  const cameraOn = snapshot.local?.isCameraEnabled ?? false;
   const sharingParticipants = tiles.filter((t) => t.screenTrack !== null);
   const maximizedTile = maximizedId ? tiles.find((t) => t.id === maximizedId) : null;
   const menuParticipant = menu ? tiles.find((t) => t.id === menu.participantId) : null;
@@ -1184,6 +1234,13 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             active={sharing}
             emphasis={sharing}
             onClick={() => void handleToggleScreen()}
+          />
+          <ControlButton
+            icon={cameraOn ? <I.CameraOff size={20} /> : <I.Camera size={20} />}
+            label={cameraOn ? "Stop camera" : "Camera"}
+            active={cameraOn}
+            emphasis={cameraOn}
+            onClick={() => void roomWrapper.setCamera(!cameraOn)}
           />
           <ControlButton
             icon={<I.Headphones size={20} />}

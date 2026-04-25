@@ -153,6 +153,11 @@ export class LiveKitRoom {
     this.emit();
   }
 
+  async setCamera(enabled: boolean): Promise<void> {
+    await this.room.localParticipant.setCameraEnabled(enabled);
+    this.emit();
+  }
+
   async leave(): Promise<void> {
     await this.room.disconnect();
     this.connected = false;

@@ -236,6 +236,25 @@ function Pip({ size = 18, style, className }: IconProps): ReactElement {
   );
 }
 
+function Camera({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <path d="M23 7l-7 5 7 5V7z" />
+      <rect x="1" y="5" width="15" height="14" rx="2" />
+    </svg>
+  );
+}
+
+function CameraOff({ size = 18, style, className }: IconProps): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <path d="M16 16V19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" />
+      <path d="M21 9.5L23 7v10l-7-5" />
+      <path d="M1 1l22 22" />
+    </svg>
+  );
+}
+
 // Monogram R Refined: bold custom-cut "R" on a red squircle with a record-dot
 // punched into the bowl. useId() for gradient IDs keeps SSR/hydration stable
 // across renders (replacing the original Math.random() suffix).
@@ -303,5 +322,7 @@ export const I = {
   Smile,
   Send,
   Pip,
+  Camera,
+  CameraOff,
   Logo,
 };
