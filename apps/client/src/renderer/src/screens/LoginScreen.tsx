@@ -4,6 +4,7 @@ import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import { Field, Spinner, CrosshairCorner } from "../components/Primitives.js";
 import { I } from "../components/Icons.js";
 import { PublicServersModal } from "../components/PublicServersModal.js";
+import { parseKeyBackup, saveKeyPair, loadKeyPair } from "../lib/key-storage.js";
 
 type Mode = "login" | "register";
 
@@ -68,6 +69,26 @@ export function LoginScreen(): ReactElement {
   const loginTotp = useAuthStore((s) => s.loginTotp);
   const cancelTotp = useAuthStore((s) => s.cancelTotp);
   const [totpCode, setTotpCode] = useState("");
+  const [keyImportMessage, setKeyImportMessage] = useState<string | null>(null);
+
+  const onImportKey = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      const kp = parseKeyBackup(text);
+      if (!kp) {
+        setKeyImportMessage("Couldn't parse — make sure it's the redvoice-key-*.json file you downloaded at registration.");
+        return;
+      }
+      saveKeyPair(kp);
+      setKeyImportMessage("Key restored. Sign in to decrypt your DM history.");
+    };
+    reader.onerror = () => setKeyImportMessage("Failed to read file.");
+    reader.readAsText(file);
+    e.target.value = "";
+  };
 
   async function onSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -409,6 +430,39 @@ export function LoginScreen(): ReactElement {
             session restored from os keychain
             <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
           </div>
+
+          {/* E2EE key import — shows on new devices where the user already has
+              an account from elsewhere and needs to restore their backup. */}
+          {!totpStep && mode === "login" && !loadKeyPair() && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "var(--s-2)",
+                fontSize: "var(--t-xs)",
+                color: "var(--text-dim)",
+                cursor: "pointer",
+              }}
+            >
+              <input type="file" accept="application/json,.json" onChange={onImportKey} style={{ display: "none" }} />
+              <span style={{ textDecoration: "underline" }}>Restore E2EE key backup…</span>
+            </label>
+          )}
+          {keyImportMessage && (
+            <div
+              style={{
+                fontSize: "var(--t-xs)",
+                color: "var(--text-mid)",
+                padding: "var(--s-2) var(--s-3)",
+                border: "1px solid var(--border-soft)",
+                borderRadius: "var(--r-sm)",
+                background: "var(--bg-elev-2)",
+              }}
+            >
+              {keyImportMessage}
+            </div>
+          )}
         </form>
       </main>
       <PublicServersModal

@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { ChatMessageDTO } from "@redvoice/shared";
 import { ApiClient } from "../lib/api.js";
 import { ChatTransport } from "../lib/chat-transport.js";
 import { useAuthStore } from "../lib/auth-context.js";
+import { decryptDM, encryptDM, type EncryptedDMPayload } from "../lib/crypto.js";
+import { loadKeyPair } from "../lib/key-storage.js";
 import { I } from "./Icons.js";
 
 interface Props {
@@ -36,6 +38,16 @@ export function RoomChatPanel({
   const apiRef = useRef<ApiClient | null>(null);
   const transportRef = useRef<ChatTransport | null>(null);
 
+  // E2EE state — only relevant for DMs.
+  const myKeyPair = useMemo(() => (threadType === "dm" ? loadKeyPair() : null), [threadType]);
+  const [peerPublicKey, setPeerPublicKey] = useState<string | null>(null);
+  const peerUserId = useMemo(() => {
+    if (threadType !== "dm") return null;
+    const parts = threadId.split(":");
+    if (parts.length !== 2) return null;
+    return parts[0] === localIdentity ? parts[1] ?? null : parts[0] ?? null;
+  }, [threadType, threadId, localIdentity]);
+
   // Build a thread-scoped API + transport. Re-initialized when the
   // thread/server/token changes.
   useEffect(() => {
@@ -56,6 +68,21 @@ export function RoomChatPanel({
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
       });
+
+    // For DMs, also fetch the peer's public key so we can encrypt outgoing
+    // messages. Decryption only needs the sender's pubkey (embedded in each
+    // ciphertext envelope) + our secret — fetching the peer is purely for
+    // sending.
+    if (threadType === "dm" && peerUserId) {
+      void api
+        .getUserPublicKey(peerUserId)
+        .then((res) => {
+          if (!cancelled) setPeerPublicKey(res.publicKey);
+        })
+        .catch(() => {
+          if (!cancelled) setPeerPublicKey(null);
+        });
+    }
 
     const off = transport.on((event) => {
       if (event.type === "message") {
@@ -99,6 +126,23 @@ export function RoomChatPanel({
   const send = async (): Promise<void> => {
     const text = draft.trim();
     if (!text || !apiRef.current) return;
+
+    // For DMs, we need both keys before we can encrypt. If they're missing,
+    // surface an error rather than silently send plaintext.
+    let body = text;
+    if (threadType === "dm") {
+      if (!myKeyPair) {
+        setError("Your encryption keypair is missing on this device. Restore your key backup from the login screen.");
+        return;
+      }
+      if (!peerPublicKey) {
+        setError("This user hasn't enrolled an encryption key yet — DMs require the recipient to be on a recent client.");
+        return;
+      }
+      const envelope = encryptDM(text, peerPublicKey, myKeyPair);
+      body = JSON.stringify(envelope);
+    }
+
     setDraft("");
     setEmojiOpen(false);
     setError(null);
@@ -106,13 +150,34 @@ export function RoomChatPanel({
     try {
       // The server broadcasts back over WS so we'll see our own message arrive
       // there. No local echo needed.
-      await apiRef.current.chatSend({ threadType, threadId, body: text });
+      await apiRef.current.chatSend({ threadType, threadId, body });
     } catch (e) {
       setError(e instanceof Error ? e.message : "send failed");
       // Restore draft so the user doesn't lose their text on a network blip.
       setDraft(text);
     }
   };
+
+  // Display-side decryption: walks every DM message and replaces its body
+  // with the decrypted plaintext (or a placeholder when decryption fails).
+  // Memoized so re-renders don't redo the work on the same ciphertext.
+  const decrypted = useMemo<ChatMessageDTO[]>(() => {
+    if (threadType !== "dm") return messages;
+    return messages.map((m) => {
+      if (m.body === null) return m; // already deleted
+      if (!myKeyPair) return { ...m, body: "(encrypted — restore your key)" };
+      let payload: EncryptedDMPayload;
+      try {
+        payload = JSON.parse(m.body) as EncryptedDMPayload;
+      } catch {
+        return m; // legacy plaintext, fall through
+      }
+      if (typeof payload !== "object" || payload === null || payload.v !== 1) return m;
+      const plain = decryptDM(payload, myKeyPair);
+      if (plain === null) return { ...m, body: "(can't decrypt)" };
+      return { ...m, body: plain };
+    });
+  }, [messages, threadType, myKeyPair]);
 
   const insertEmoji = (e: string): void => {
     setDraft((d) => d + e);
@@ -183,7 +248,7 @@ export function RoomChatPanel({
           gap: "var(--s-3)",
         }}
       >
-        {messages.length === 0 ? (
+        {decrypted.length === 0 ? (
           <div
             style={{
               color: "var(--text-faint)",
@@ -196,7 +261,7 @@ export function RoomChatPanel({
             No messages yet.
           </div>
         ) : (
-          messages.map((m) => <ChatBubble key={m.id} msg={m} />)
+          decrypted.map((m) => <ChatBubble key={m.id} msg={m} />)
         )}
         {error && (
           <div
