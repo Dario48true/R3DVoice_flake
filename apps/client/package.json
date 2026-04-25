@@ -1,6 +1,6 @@
 {
   "name": "@redvoice/client",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "private": true,
   "description": "RedVoice – low-latency voice/video communication for gamers",
   "author": {
@@ -19,7 +19,8 @@
     "package": "electron-builder",
     "package:linux": "electron-builder --linux AppImage deb",
     "package:win": "electron-builder --win nsis",
-    "package:mac": "electron-builder --mac dmg"
+    "package:mac": "electron-builder --mac dmg",
+    "build:icons": "node scripts/generate-icon.mjs"
   },
   "dependencies": {
     "@redvoice/shared": "workspace:*",
@@ -37,6 +38,7 @@
     "electron-vite": "^3.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sharp": "^0.33.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
     "vitest": "^2.1.0"

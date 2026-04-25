@@ -1,6 +1,8 @@
 import { useState, useEffect, type FormEvent, type ReactElement } from "react";
 import { useAuthStore } from "../lib/auth-context.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
+import { Field, Spinner, CrosshairCorner } from "../components/Primitives.js";
+import { I } from "../components/Icons.js";
 
 type Mode = "login" | "register";
 
@@ -18,6 +20,7 @@ export function LoginScreen(): ReactElement {
   useEffect(() => {
     setServerUrl(prefsServerUrl);
   }, [prefsServerUrl, setServerUrl]);
+
   const status = useAuthStore((s) => s.status);
   const error = useAuthStore((s) => s.error);
   const login = useAuthStore((s) => s.login);
@@ -35,91 +38,273 @@ export function LoginScreen(): ReactElement {
   const busy = status === "loading";
 
   return (
-    <div className="centered">
-      <form className="form" onSubmit={onSubmit}>
-        <h2 style={{ margin: 0 }}>RedVoice</h2>
+    <div style={{ display: "grid", gridTemplateColumns: "1.05fr 1fr", height: "100%" }}>
+      <aside
+        style={{
+          position: "relative",
+          background: `
+          radial-gradient(80% 60% at 20% 10%,
+            color-mix(in oklch, var(--rv-red-700) 35%, transparent), transparent 60%),
+          radial-gradient(70% 60% at 90% 90%,
+            color-mix(in oklch, var(--rv-red-900) 60%, transparent), transparent 60%),
+          var(--rv-ink-0)`,
+          padding: "var(--s-9)",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          borderRight: "1px solid var(--border-soft)",
+          overflow: "hidden",
+        }}
+      >
+        <CrosshairCorner pos="tl" />
+        <CrosshairCorner pos="tr" />
+        <CrosshairCorner pos="bl" />
+        <CrosshairCorner pos="br" />
 
-        <div className="tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            className={mode === "login" ? "active" : ""}
-            onClick={() => setMode("login")}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", position: "relative" }}>
+          <I.Logo size={28} />
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--t-xs)",
+              letterSpacing: ".18em",
+              textTransform: "uppercase",
+              color: "var(--text-mid)",
+            }}
           >
-            Log in
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={mode === "register" ? "active" : ""}
-            onClick={() => setMode("register")}
-          >
-            Register
-          </button>
+            REDVOICE / SIGNAL
+          </div>
         </div>
 
-        <label>
-          <div className="section-title">Server</div>
-          <input
-            type="text"
-            value={serverUrl}
-            onChange={(e) => {
-              setServerUrl(e.target.value);
-              prefsActions().setServerUrl(e.target.value);
+        <div style={{ position: "relative" }}>
+          <div
+            className="rv-headline"
+            style={{
+              fontSize: "clamp(2.2rem, 4.5vw, 3.4rem)",
+              color: "var(--text)",
+              marginBottom: "var(--s-4)",
             }}
-            placeholder="http://localhost:3000"
-            spellCheck={false}
-          />
-        </label>
+          >
+            Talk loud.
+            <br />
+            <span
+              style={{
+                background:
+                  "linear-gradient(100deg, var(--accent-glow), var(--accent-hover) 60%, var(--rv-red-700))",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              Share screens.
+            </span>
+            <br />
+            Own your server.
+          </div>
+          <p style={{ color: "var(--text-mid)", maxWidth: "32ch", fontSize: "var(--t-md)", lineHeight: 1.55 }}>
+            Open-source voice + screenshare for friends, raid nights, and the people you actually want to hear.
+          </p>
+          <div style={{ display: "flex", gap: "var(--s-3)", marginTop: "var(--s-7)" }}>
+            <span className="rv-badge" data-tone="live">
+              <span className="pip" /> 4 servers up
+            </span>
+            <span className="rv-badge">
+              <span className="rv-mono">62 ms</span>
+            </span>
+            <span className="rv-badge">e2e srtp</span>
+          </div>
+        </div>
 
-        <label>
-          <div className="section-title">Email</div>
-          <input
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </label>
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            justifyContent: "space-between",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--t-2xs)",
+            letterSpacing: ".14em",
+            textTransform: "uppercase",
+            color: "var(--text-faint)",
+          }}
+        >
+          <span>build · 2026.04.25</span>
+          <span>↳ self-hostable · MIT</span>
+        </div>
+      </aside>
 
-        {mode === "register" && (
-          <label>
-            <div className="section-title">Display name</div>
-            <input
-              type="text"
-              required
-              minLength={1}
-              maxLength={50}
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-          </label>
-        )}
+      <main
+        style={{
+          display: "grid",
+          placeItems: "center",
+          padding: "var(--s-7)",
+          background: "var(--bg)",
+          position: "relative",
+        }}
+      >
+        <form
+          onSubmit={onSubmit}
+          className="rv-fade-in"
+          style={{
+            width: "min(100%, 26rem)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--s-5)",
+          }}
+        >
+          <div className="rv-tabs" role="tablist">
+            <button
+              type="button"
+              className="rv-tab"
+              data-active={mode === "login"}
+              onClick={() => setMode("login")}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className="rv-tab"
+              data-active={mode === "register"}
+              onClick={() => setMode("register")}
+            >
+              Create account
+            </button>
+            <span style={{ flex: 1 }} />
+            <span className="rv-label" style={{ alignSelf: "center" }}>
+              SECURE&nbsp;·&nbsp;ARGON2ID
+            </span>
+          </div>
 
-        <label>
-          <div className="section-title">Password</div>
-          <input
-            type="password"
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            required
-            minLength={mode === "register" ? 12 : 1}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <Field label="Server" hint="Self-hosted instance">
+            <div style={{ position: "relative" }}>
+              <input
+                className="rv-input"
+                value={serverUrl}
+                onChange={(e) => {
+                  setServerUrl(e.target.value);
+                  prefsActions().setServerUrl(e.target.value);
+                }}
+                placeholder="http://localhost:3000"
+                spellCheck={false}
+                style={{ paddingRight: "5.5rem" }}
+              />
+              <span
+                className="rv-badge"
+                data-tone="live"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  height: "1.4rem",
+                }}
+              >
+                <span className="pip" /> reachable
+              </span>
+            </div>
+          </Field>
+
           {mode === "register" && (
-            <div className="section-title" style={{ marginTop: 4, textTransform: "none" }}>
-              At least 12 characters.
+            <Field label="Display name">
+              <input
+                className="rv-input"
+                type="text"
+                required
+                minLength={1}
+                maxLength={50}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="How you'll appear"
+              />
+            </Field>
+          )}
+
+          <Field label="Email">
+            <input
+              className="rv-input"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+
+          <Field
+            label="Password"
+            right={
+              mode === "login" ? (
+                <a
+                  href="#"
+                  onClick={(e) => e.preventDefault()}
+                  style={{ color: "var(--text-dim)", fontSize: "var(--t-xs)" }}
+                >
+                  Forgot?
+                </a>
+              ) : null
+            }
+          >
+            <input
+              className="rv-input"
+              type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              required
+              minLength={mode === "register" ? 12 : 1}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            {mode === "register" && <div className="rv-field-help">At least 12 characters.</div>}
+          </Field>
+
+          {error && (
+            <div
+              style={{
+                color: "var(--accent-glow)",
+                fontSize: "var(--t-sm)",
+                padding: "var(--s-2) var(--s-3)",
+                border: "1px solid color-mix(in oklch, var(--accent) 40%, transparent)",
+                borderRadius: "var(--r-sm)",
+                background: "color-mix(in oklch, var(--accent) 8%, var(--bg-elev-2))",
+              }}
+            >
+              {error}
             </div>
           )}
-        </label>
 
-        {error && <div className="error">{error}</div>}
+          <button
+            className="rv-btn"
+            data-variant="primary"
+            type="submit"
+            disabled={busy}
+            style={{ height: "2.6rem", marginTop: "var(--s-2)" }}
+          >
+            {busy ? (
+              <>
+                <Spinner /> Connecting…
+              </>
+            ) : (
+              <>
+                {mode === "login" ? "Sign in" : "Create account"} <I.Chevron size={16} />
+              </>
+            )}
+          </button>
 
-        <button className="btn" type="submit" disabled={busy}>
-          {busy ? "…" : mode === "login" ? "Log in" : "Create account"}
-        </button>
-      </form>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--s-3)",
+              color: "var(--text-faint)",
+              fontSize: "var(--t-xs)",
+              fontFamily: "var(--font-mono)",
+              letterSpacing: ".06em",
+            }}
+          >
+            <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+            session restored from os keychain
+            <span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+          </div>
+        </form>
+      </main>
     </div>
   );
 }

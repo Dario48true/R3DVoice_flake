@@ -15,6 +15,11 @@ export interface PrefsState {
   frameRate: FrameRate;
   shareAudio: boolean;
   pttKeybind: string | null;
+  muteKeybind: string | null;
+  deafenKeybind: string | null;
+  shareScreenKeybind: string | null;
+  openSettingsKeybind: string | null;
+  leaveRoomKeybind: string | null;
   compatibilityMode: boolean;
   serverUrl: string;
 
@@ -24,6 +29,11 @@ export interface PrefsState {
   setFrameRate(f: FrameRate): void;
   setShareAudio(v: boolean): void;
   setPttKeybind(k: string | null): void;
+  setMuteKeybind(k: string | null): void;
+  setDeafenKeybind(k: string | null): void;
+  setShareScreenKeybind(k: string | null): void;
+  setOpenSettingsKeybind(k: string | null): void;
+  setLeaveRoomKeybind(k: string | null): void;
   setCompatibilityMode(v: boolean): void;
   setServerUrl(u: string): void;
 }
@@ -35,6 +45,11 @@ const DEFAULTS = {
   frameRate: 30 as FrameRate,
   shareAudio: true,
   pttKeybind: null as string | null,
+  muteKeybind: null as string | null,
+  deafenKeybind: null as string | null,
+  shareScreenKeybind: null as string | null,
+  openSettingsKeybind: null as string | null,
+  leaveRoomKeybind: null as string | null,
   compatibilityMode: false,
   serverUrl: "http://localhost:3000",
 };
@@ -61,6 +76,11 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
       frameRate: state.frameRate,
       shareAudio: state.shareAudio,
       pttKeybind: state.pttKeybind,
+      muteKeybind: state.muteKeybind,
+      deafenKeybind: state.deafenKeybind,
+      shareScreenKeybind: state.shareScreenKeybind,
+      openSettingsKeybind: state.openSettingsKeybind,
+      leaveRoomKeybind: state.leaveRoomKeybind,
       compatibilityMode: state.compatibilityMode,
       serverUrl: state.serverUrl,
     };
@@ -75,6 +95,11 @@ export function createPrefsStore(storage: PrefsStorage): StoreApi<PrefsState> {
     setFrameRate: (v) => { set({ frameRate: v }); persistFromState(get()); },
     setShareAudio: (v) => { set({ shareAudio: v }); persistFromState(get()); },
     setPttKeybind: (v) => { set({ pttKeybind: v }); persistFromState(get()); },
+    setMuteKeybind: (v) => { set({ muteKeybind: v }); persistFromState(get()); },
+    setDeafenKeybind: (v) => { set({ deafenKeybind: v }); persistFromState(get()); },
+    setShareScreenKeybind: (v) => { set({ shareScreenKeybind: v }); persistFromState(get()); },
+    setOpenSettingsKeybind: (v) => { set({ openSettingsKeybind: v }); persistFromState(get()); },
+    setLeaveRoomKeybind: (v) => { set({ leaveRoomKeybind: v }); persistFromState(get()); },
     setCompatibilityMode: (v) => { set({ compatibilityMode: v }); persistFromState(get()); },
     setServerUrl: (v) => { set({ serverUrl: v }); persistFromState(get()); },
   }));

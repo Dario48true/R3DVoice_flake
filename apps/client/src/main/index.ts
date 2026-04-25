@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session } from "electron";
+import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, screen, session } from "electron";
 import { join } from "node:path";
 import { existsSync, writeFileSync, rmSync } from "node:fs";
 import { saveToken, getToken, clearToken } from "./token-store.js";
@@ -6,6 +6,11 @@ import { openScreenPicker, registerScreenPickerHandlers } from "./screen-picker.
 import { setPttKeybind, teardownKeybinds } from "./keybinds.js";
 import { initAutoUpdate } from "./auto-update.js";
 import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
+import {
+  openSplashWindow,
+  sendSplashStatus,
+  closeSplash,
+} from "./splash-window.js";
 
 // Force app name / WMClass to "RedVoice" so Plasma/GNOME taskbars match this
 // window to ~/.local/share/applications/redvoice.desktop instead of falling
@@ -13,6 +18,7 @@ import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
 // a temporary mount that vanishes on exit).
 app.setName("RedVoice");
 app.commandLine.appendSwitch("class", "RedVoice");
+Menu.setApplicationMenu(null);
 
 // When launched from a desktop-file or taskbar (no attached terminal),
 // process.stdout/stderr are closed pipes. Any console.* write — ours or
@@ -54,12 +60,18 @@ try {
   // Too early; skip. Flag will take effect on the next launch.
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow> {
   const iconPath = resolveIconPath();
+  const primary = screen.getPrimaryDisplay().workArea;
+  const winW = 1200;
+  const winH = 800;
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: winW,
+    height: winH,
+    x: primary.x + Math.round((primary.width - winW) / 2),
+    y: primary.y + Math.round((primary.height - winH) / 2),
     backgroundColor: "#101014",
+    show: false, // splash holds the screen until ready-to-show fires
     ...(iconPath && { icon: iconPath }),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.mjs"),
@@ -69,12 +81,22 @@ async function createWindow(): Promise<void> {
     },
   });
 
+  win.once("ready-to-show", () => {
+    sendSplashStatus(splash, { phase: "ready" });
+    // Brief delay so the user sees "Ready" — feels intentional, not abrupt.
+    setTimeout(() => {
+      if (!win.isDestroyed()) win.show();
+      closeSplash(splash);
+    }, 300);
+  });
+
   if (RENDERER_DEV_URL) {
     await win.loadURL(RENDERER_DEV_URL);
     win.webContents.openDevTools({ mode: "detach" });
   } else {
     await win.loadFile(join(import.meta.dirname, "../renderer/index.html"));
   }
+  return win;
 }
 
 function registerIpcHandlers(): void {
@@ -112,7 +134,15 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   registerScreenPickerHandlers();
   writeDesktopEntry();
-  initAutoUpdate();
+
+  // Open splash FIRST so the user sees feedback while the renderer + any
+  // update check are warming up.
+  const splash = openSplashWindow();
+  splash.webContents.once("did-finish-load", () => {
+    sendSplashStatus(splash, { phase: "initializing" });
+  });
+
+  initAutoUpdate(splash);
 
   // On Wayland, xdg-desktop-portal is the picker — the OS won't let any app
   // enumerate screens without the user clicking in the portal dialog first.
@@ -154,10 +184,10 @@ app.whenReady().then(async () => {
     }
   });
 
-  await createWindow();
+  await createWindow(splash);
 
   app.on("activate", async () => {
-    if (BrowserWindow.getAllWindows().length === 0) await createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) await createWindow(null);
   });
 });
 

@@ -86,7 +86,7 @@ export function writeDesktopEntry(): void {
       "GenericName=Voice Chat",
       "Comment=Open-source screenshare + voice chat",
       `Exec="${appImagePath}" %U`,
-      "Icon=redvoice",
+      `Icon=${join(home, ".local/share/icons/hicolor/512x512/apps/redvoice.png")}`,
       "Type=Application",
       "Categories=Network;Chat;AudioVideo;",
       "StartupWMClass=RedVoice",

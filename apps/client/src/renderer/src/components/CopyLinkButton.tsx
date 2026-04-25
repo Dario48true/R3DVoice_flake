@@ -22,12 +22,11 @@ export function CopyLinkButton({
 
   return (
     <button
-      className="btn secondary"
-      style={{ padding: "4px 10px" }}
+      className="rv-btn"
       onClick={() => void copy()}
       title="Copy room link to clipboard"
     >
-      {copied ? "Copied!" : "Copy link"}
+      {copied ? "Copied" : "Copy link"}
     </button>
   );
 }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { RedVoiceBridge } from "../shared/bridge-types.js";
+import type { RedVoiceBridge, SplashStatus } from "../shared/bridge-types.js";
 
 const bridge: RedVoiceBridge = {
   saveToken: (token) => ipcRenderer.invoke("auth:save-token", token),
@@ -16,6 +16,11 @@ const bridge: RedVoiceBridge = {
     const handler = (_evt: Electron.IpcRendererEvent, pressed: boolean): void => cb(pressed);
     ipcRenderer.on("keybind:ptt", handler);
     return () => ipcRenderer.off("keybind:ptt", handler);
+  },
+  onSplashStatus: (cb) => {
+    const handler = (_evt: Electron.IpcRendererEvent, status: SplashStatus): void => cb(status);
+    ipcRenderer.on("splash:status", handler);
+    return () => ipcRenderer.off("splash:status", handler);
   },
 };
 

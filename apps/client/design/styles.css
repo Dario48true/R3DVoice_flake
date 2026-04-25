@@ -461,10 +461,11 @@ input, select, textarea { font: inherit; color: inherit; }
 .rv-vu-fill {
   position: absolute; inset: 0; right: auto;
   background: linear-gradient(90deg,
-              color-mix(in oklch, var(--accent) 60%, var(--accent-hover)) 0%,
+              var(--rv-live) 0%,
+              var(--rv-amber) 70%,
               var(--accent) 100%);
-  transition: width 40ms linear;
-  box-shadow: 0 0 8px color-mix(in oklch, var(--accent) 50%, transparent);
+  transition: width 60ms linear;
+  box-shadow: 0 0 8px color-mix(in oklch, var(--rv-live) 40%, transparent);
 }
 .rv-vu-ticks {
   position: absolute; inset: 0;
@@ -573,14 +574,4 @@ input, select, textarea { font: inherit; color: inherit; }
 .rv-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--rv-ink-500); background-clip: content-box;
   border: 2px solid transparent;
-}
-
-@keyframes rv-spin { to { transform: rotate(360deg); } }
-@keyframes rv-modal-in {
-  from { opacity: 0; transform: translateY(8px) scale(.985); }
-  to   { opacity: 1; transform: none; }
-}
-@keyframes rv-vu-bar {
-  from { transform: scaleY(.4); }
-  to   { transform: scaleY(1); }
 }

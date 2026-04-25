@@ -1,121 +1,122 @@
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { listAudioInputs, listAudioOutputs, type DeviceInfo } from "../lib/media.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
+import { MOD_KEY, SHIFT_KEY } from "../lib/platform.js";
+import { I } from "./Icons.js";
+import { Modal } from "./Modal.js";
+import { Field } from "./Primitives.js";
 
-type Tab = "devices" | "keybinds" | "compatibility" | "about";
+type Tab = "devices" | "keybinds" | "compat" | "about";
+
+// Local copy of the designer's kbd inline style. Will be lifted to a shared
+// helper once a third call site appears.
+const kbdStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "1px 6px",
+  border: "1px solid var(--border-strong)",
+  borderRadius: 4,
+  background: "var(--bg-elev-2)",
+  fontFamily: "var(--font-mono)",
+  fontSize: 10,
+  color: "var(--text)",
+};
 
 export function SettingsModal({ onClose }: { onClose: () => void }): ReactElement {
   const [tab, setTab] = useState<Tab>("devices");
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2000,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--bg-elev)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          minWidth: 640,
-          minHeight: 420,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        <div
+    <Modal open={true} onClose={onClose} title="Settings">
+      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", height: 540 }}>
+        {/* Side nav */}
+        <nav
           style={{
+            borderRight: "1px solid var(--border-soft)",
+            padding: "var(--s-4) var(--s-3)",
             display: "flex",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg)",
+            flexDirection: "column",
+            gap: 2,
           }}
         >
-          <TabButton label="Devices" active={tab === "devices"} onClick={() => setTab("devices")} />
-          <TabButton label="Keybinds" active={tab === "keybinds"} onClick={() => setTab("keybinds")} />
-          <TabButton label="Compatibility" active={tab === "compatibility"} onClick={() => setTab("compatibility")} />
-          <TabButton label="About" active={tab === "about"} onClick={() => setTab("about")} />
-          <div style={{ flex: 1 }} />
-          <button
-            className="btn secondary"
-            onClick={onClose}
-            style={{ border: "none", borderRadius: 0, background: "transparent" }}
-          >
-            ✕
-          </button>
-        </div>
-        <div style={{ padding: 24, flex: 1, overflow: "auto" }}>
+          <NavButton
+            active={tab === "devices"}
+            onClick={() => setTab("devices")}
+            icon={<I.Mic size={14} />}
+            label="Devices"
+          />
+          <NavButton
+            active={tab === "keybinds"}
+            onClick={() => setTab("keybinds")}
+            icon={<I.Settings size={14} />}
+            label="Keybinds"
+          />
+          <NavButton
+            active={tab === "compat"}
+            onClick={() => setTab("compat")}
+            icon={<I.Grid size={14} />}
+            label="Compatibility"
+          />
+          <NavButton
+            active={tab === "about"}
+            onClick={() => setTab("about")}
+            icon={<I.Star size={14} />}
+            label="About"
+          />
+        </nav>
+
+        {/* Body */}
+        <div className="rv-scroll" style={{ padding: "var(--s-6) var(--s-7)", overflowY: "auto", minHeight: 0 }}>
           {tab === "devices" && <DevicesTab />}
           {tab === "keybinds" && <KeybindsTab />}
-          {tab === "compatibility" && <CompatibilityTab />}
-          {tab === "about" && <About />}
+          {tab === "compat" && <CompatTab />}
+          {tab === "about" && <AboutTab />}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-function TabButton({
-  label,
+function NavButton({
   active,
   onClick,
+  icon,
+  label,
 }: {
-  label: string;
   active: boolean;
   onClick: () => void;
+  icon: ReactNode;
+  label: string;
 }): ReactElement {
   return (
     <button
       onClick={onClick}
       style={{
-        background: "transparent",
-        border: "none",
-        borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
-        color: active ? "var(--text)" : "var(--text-dim)",
-        padding: "12px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--s-3)",
+        padding: "8px 10px",
+        border: 0,
         cursor: "pointer",
-        font: "inherit",
+        textAlign: "left",
+        borderRadius: "var(--r-sm)",
+        background: active
+          ? "color-mix(in oklch, var(--accent) 14%, var(--bg-elev-2))"
+          : "transparent",
+        color: active ? "var(--text)" : "var(--text-mid)",
+        fontSize: "var(--t-sm)",
+        fontWeight: 500,
+        borderLeft: active ? "2px solid var(--accent)" : "2px solid transparent",
+        paddingLeft: 10,
       }}
     >
-      {label}
+      {icon} {label}
     </button>
   );
-}
-
-function Placeholder({ label }: { label: string }): ReactElement {
-  return <div style={{ color: "var(--text-dim)" }}>{label}</div>;
-}
-
-function About(): ReactElement {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <strong>RedVoice</strong>
-      <div style={{ color: "var(--text-dim)", fontSize: 13 }}>
-        Open-source, self-hostable, Discord-style screenshare + voice chat.
-      </div>
-    </div>
-  );
-}
-
-export function SettingsSection({ children }: { children: ReactNode }): ReactElement {
-  return <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>;
 }
 
 function DevicesTab(): ReactElement {
@@ -137,73 +138,155 @@ function DevicesTab(): ReactElement {
   }, []);
 
   return (
-    <SettingsSection>
-      <label>
-        <div className="section-title">Microphone</div>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-5)",
+        maxWidth: 460,
+      }}
+    >
+      <div className="rv-section-head">
+        <span className="rv-label">Audio In/Out</span>
+      </div>
+      <Field label="Microphone">
         <select
+          className="rv-select"
           value={micId ?? ""}
           onChange={(e) => prefsActions().setMicDeviceId(e.target.value || null)}
         >
           {mics.length === 0 && <option value="">No mic detected</option>}
           {mics.map((m) => (
-            <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
+            <option key={m.deviceId} value={m.deviceId}>
+              {m.label}
+            </option>
           ))}
         </select>
-      </label>
-      <label>
-        <div className="section-title">Speakers</div>
+      </Field>
+      <Field label="Speakers">
         <select
+          className="rv-select"
           value={spkId ?? ""}
           onChange={(e) => prefsActions().setSpeakerDeviceId(e.target.value || null)}
         >
           {speakers.length === 0 && <option value="">Default output</option>}
           {speakers.map((s) => (
-            <option key={s.deviceId} value={s.deviceId}>{s.label}</option>
+            <option key={s.deviceId} value={s.deviceId}>
+              {s.label}
+            </option>
           ))}
         </select>
-      </label>
-      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+      </Field>
+      <div
+        style={{
+          padding: "var(--s-3) var(--s-4)",
+          background: "color-mix(in oklch, var(--rv-live) 10%, var(--bg-elev-2))",
+          border: "1px solid color-mix(in oklch, var(--rv-live) 35%, var(--border))",
+          borderRadius: "var(--r-md)",
+          display: "flex",
+          gap: "var(--s-3)",
+          alignItems: "center",
+          fontSize: "var(--t-sm)",
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "var(--rv-live)",
+            boxShadow: "0 0 8px var(--rv-live)",
+          }}
+        />
         Changes apply live — no need to rejoin.
       </div>
-    </SettingsSection>
+
+      <div className="rv-section-head">
+        <span className="rv-label">Processing</span>
+      </div>
+      {/* real audio processing toggles wired in Phase 5 T13/T14 */}
+      <Toggle
+        label="Noise suppression"
+        hint="RNNoise · removes keyboard, fans, room echo"
+        defaultChecked
+      />
+      <Toggle label="Auto-gain control" hint="Normalize speaking level" defaultChecked />
+      <Toggle
+        label="Echo cancellation"
+        hint="Required if you use speakers"
+        defaultChecked
+      />
+    </div>
   );
 }
 
-function CompatibilityTab(): ReactElement {
-  const enabled = usePrefs((s) => s.compatibilityMode);
-
-  async function toggle(): Promise<void> {
-    const next = !enabled;
-    prefsActions().setCompatibilityMode(next);
-    await window.redvoice.setCompatibilityEnv(next);
-  }
-
-  async function relaunch(): Promise<void> {
-    await window.redvoice.relaunch();
-  }
-
+function Toggle({
+  label,
+  hint,
+  defaultChecked,
+}: {
+  label: string;
+  hint?: string;
+  defaultChecked?: boolean;
+}): ReactElement {
+  const [on, setOn] = useState<boolean>(!!defaultChecked);
   return (
-    <SettingsSection>
-      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input type="checkbox" checked={enabled} onChange={() => void toggle()} />
-        <span>X11 compatibility mode (Linux/Wayland)</span>
-      </label>
-      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-        Forces Electron through XWayland. Use if screenshare glitches on Wayland.
-        Takes effect after relaunch.
-      </div>
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--s-4)",
+        cursor: "pointer",
+        padding: "10px 0",
+        borderBottom: "1px solid var(--border-soft)",
+      }}
+    >
       <div>
-        <button className="btn" onClick={() => void relaunch()}>Relaunch app</button>
+        <div style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>{label}</div>
+        {hint && (
+          <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 2 }}>
+            {hint}
+          </div>
+        )}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
-        Platform-specific notes:
-        <ul style={{ marginTop: 4 }}>
-          <li><strong>macOS</strong>: grant Screen Recording permission in System Settings → Privacy</li>
-          <li><strong>Linux</strong>: system audio in screenshare needs PipeWire portal ≥ 1.14</li>
-          <li><strong>Windows</strong>: system audio uses "loopback" — no setup needed</li>
-        </ul>
-      </div>
-    </SettingsSection>
+      <span
+        onClick={() => setOn((o) => !o)}
+        style={{
+          width: 36,
+          height: 20,
+          borderRadius: 999,
+          background: on ? "var(--accent)" : "var(--bg-elev-3)",
+          border:
+            "1px solid " +
+            (on ? "color-mix(in oklch, var(--accent) 70%, black)" : "var(--border-strong)"),
+          position: "relative",
+          transition: "all var(--d-base) var(--ease-out)",
+          boxShadow: on ? "0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent)" : "none",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 1,
+            left: on ? 17 : 1,
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            background: "var(--text)",
+            transition: "left var(--d-base) var(--ease-out)",
+          }}
+        />
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={() => {
+            /* state mutates via the wrapper click */
+          }}
+          style={{ display: "none" }}
+        />
+      </span>
+    </label>
   );
 }
 
@@ -245,24 +328,284 @@ function KeybindsTab(): ReactElement {
 
   const display = captured ?? current ?? "(none)";
 
+  // only PTT is wired — others are coming soon
+  const decorative: Array<[string, string]> = [
+    ["Toggle mute", `${MOD_KEY} + ${SHIFT_KEY} + M`],
+    ["Toggle deafen", `${MOD_KEY} + ${SHIFT_KEY} + D`],
+    ["Toggle screen-share", `${MOD_KEY} + ${SHIFT_KEY} + E`],
+    ["Open settings", `${MOD_KEY} + ,`],
+    ["Leave room", `${MOD_KEY} + W`],
+  ];
+
   return (
-    <SettingsSection>
-      <div>
-        <div className="section-title">Push-to-talk</div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <code style={{ padding: "4px 8px", background: "var(--bg)", borderRadius: 4, minWidth: 140, display: "inline-block" }}>
-            {display}
-          </code>
-          <button className="btn secondary" onClick={() => setRecording(true)} disabled={recording}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-3)",
+        maxWidth: 460,
+      }}
+    >
+      <div className="rv-section-head">
+        <span className="rv-label">Global keybinds</span>
+      </div>
+
+      {/* PTT — fully wired */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "10px 0",
+          borderBottom: "1px solid var(--border-soft)",
+          gap: "var(--s-3)",
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontSize: "var(--t-sm)" }}>Push to talk</span>
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <kbd style={kbdStyle}>{display}</kbd>
+          <button
+            className="rv-btn"
+            data-variant="ghost"
+            onClick={() => setRecording(true)}
+            disabled={recording}
+          >
             {recording ? "Press a key…" : "Rebind"}
           </button>
-          {captured && <button className="btn" onClick={() => void save()}>Save</button>}
-          {current && !captured && <button className="btn secondary" onClick={() => void clear()}>Clear</button>}
+          {captured && (
+            <button className="rv-btn" data-variant="primary" onClick={() => void save()}>
+              Save
+            </button>
+          )}
+          {current && !captured && (
+            <button className="rv-btn" data-variant="ghost" onClick={() => void clear()}>
+              Clear
+            </button>
+          )}
+        </span>
+      </div>
+
+      {/* Decorative rows — placeholder until Phase 5 T-keybinds */}
+      {decorative.map(([l, k]) => (
+        <div
+          key={l}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "10px 0",
+            borderBottom: "1px solid var(--border-soft)",
+          }}
+        >
+          <span style={{ fontSize: "var(--t-sm)" }}>{l}</span>
+          <span style={{ display: "flex", gap: 4 }}>
+            {k.split(" + ").map((kk, i) => (
+              <kbd key={i} style={kbdStyle}>
+                {kk}
+              </kbd>
+            ))}
+          </span>
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
-          Hold this key to briefly unmute. Works even when the app isn't focused.
+      ))}
+    </div>
+  );
+}
+
+function CompatTab(): ReactElement {
+  const enabled = usePrefs((s) => s.compatibilityMode);
+
+  async function toggleX11(): Promise<void> {
+    const next = !enabled;
+    prefsActions().setCompatibilityMode(next);
+    await window.redvoice.setCompatibilityEnv(next);
+  }
+
+  async function relaunch(): Promise<void> {
+    await window.redvoice.relaunch();
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-4)",
+        maxWidth: 480,
+      }}
+    >
+      <div className="rv-section-head">
+        <span className="rv-label">Hardware acceleration</span>
+      </div>
+
+      {/* X11 / Wayland — wired */}
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "var(--s-4)",
+          cursor: "pointer",
+          padding: "10px 0",
+          borderBottom: "1px solid var(--border-soft)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>
+            X11 compatibility mode (Linux/Wayland)
+          </div>
+          <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 2 }}>
+            Forces Electron through XWayland. Use if screenshare glitches on Wayland. Takes effect
+            after relaunch.
+          </div>
+        </div>
+        <span
+          onClick={() => void toggleX11()}
+          style={{
+            width: 36,
+            height: 20,
+            borderRadius: 999,
+            background: enabled ? "var(--accent)" : "var(--bg-elev-3)",
+            border:
+              "1px solid " +
+              (enabled
+                ? "color-mix(in oklch, var(--accent) 70%, black)"
+                : "var(--border-strong)"),
+            position: "relative",
+            transition: "all var(--d-base) var(--ease-out)",
+            boxShadow: enabled
+              ? "0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent)"
+              : "none",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 1,
+              left: enabled ? 17 : 1,
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "var(--text)",
+              transition: "left var(--d-base) var(--ease-out)",
+            }}
+          />
+        </span>
+      </label>
+
+      {/* Inert toggles per designer */}
+      <Toggle label="GPU video decode (VP9 / AV1)" defaultChecked />
+      <Toggle label="Use system Picture-in-Picture" />
+
+      <div>
+        <button className="rv-btn" onClick={() => void relaunch()}>
+          Relaunch app
+        </button>
+      </div>
+
+      <div style={{ fontSize: "var(--t-xs)", color: "var(--text-dim)" }}>
+        Platform-specific notes:
+        <ul style={{ marginTop: 4 }}>
+          <li>
+            <strong>macOS</strong>: grant Screen Recording permission in System Settings → Privacy
+          </li>
+          <li>
+            <strong>Linux</strong>: system audio in screenshare needs PipeWire portal ≥ 1.14
+          </li>
+          <li>
+            <strong>Windows</strong>: system audio uses "loopback" — no setup needed
+          </li>
+        </ul>
+      </div>
+
+      <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
+        <span className="rv-label">Permissions</span>
+      </div>
+      {/* real permission probing in Phase 5 T5 */}
+      <PermRow label="Microphone" status="granted" />
+      <PermRow label="Camera" status="not requested" />
+      <PermRow label="Screen recording" status="granted" />
+      <PermRow label="Notifications" status="not requested" />
+    </div>
+  );
+}
+
+function PermRow({ label, status }: { label: string; status: string }): ReactElement {
+  const tone = status === "granted" ? "live" : status === "denied" ? "red" : undefined;
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "10px 0",
+        borderBottom: "1px solid var(--border-soft)",
+      }}
+    >
+      <span style={{ fontSize: "var(--t-sm)" }}>{label}</span>
+      <span className="rv-badge" data-tone={tone}>
+        {tone === "live" && <span className="pip" />}
+        {status}
+      </span>
+    </div>
+  );
+}
+
+function AboutTab(): ReactElement {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--s-5)",
+        maxWidth: 460,
+      }}
+    >
+      <div style={{ display: "flex", gap: "var(--s-4)", alignItems: "center" }}>
+        <I.Logo size={48} />
+        <div>
+          <div style={{ fontSize: "var(--t-xl)", fontWeight: 700, letterSpacing: "-0.01em" }}>
+            RedVoice
+          </div>
+          <div className="rv-mono" style={{ fontSize: "var(--t-xs)", color: "var(--text-dim)" }}>
+            v0.1.5 · electron 35 · chromium 130
+          </div>
         </div>
       </div>
-    </SettingsSection>
+      <p style={{ color: "var(--text-mid)", lineHeight: 1.6, margin: 0 }}>
+        Open-source voice + screenshare. Self-host the server, own your data, keep your raid in
+        your basement. MIT licensed, no telemetry by default.
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2,1fr)",
+          gap: "var(--s-2)",
+        }}
+      >
+        <a
+          className="rv-btn"
+          href="https://github.com/R3dWolfie/RedVoice"
+          target="_blank"
+          rel="noreferrer"
+        >
+          View on GitHub
+        </a>
+        <a
+          className="rv-btn"
+          href="https://github.com/R3dWolfie/RedVoice/issues/new"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Report an issue
+        </a>
+        <button className="rv-btn" disabled title="Coming soon">
+          Diagnostics…
+        </button>
+        <button className="rv-btn" disabled title="Coming soon">
+          Reset to defaults
+        </button>
+      </div>
+    </div>
   );
 }

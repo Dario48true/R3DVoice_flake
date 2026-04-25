@@ -48,7 +48,7 @@ export function subscribeMicLevel(
       sum += v * v;
     }
     const rms = Math.sqrt(sum / buf.length);
-    onLevel(Math.min(1, rms * 2)); // scale so normal speech lands around 0.3-0.6
+    onLevel(Math.min(1, rms * 6));
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);

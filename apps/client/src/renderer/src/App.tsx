@@ -3,14 +3,26 @@ import { AuthProvider, useAuthStore } from "./lib/auth-context.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { prefsActions } from "./lib/prefs-singleton.js";
+import { WindowChrome, Spinner } from "./components/Primitives.js";
 
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
 
   if (status === "loading") {
     return (
-      <div className="centered">
-        <div style={{ color: "var(--text-dim)" }}>Loading…</div>
+      <div style={{ display: "grid", placeItems: "center", height: "100%", gap: "var(--s-3)" }}>
+        <Spinner />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--t-xs)",
+            letterSpacing: ".18em",
+            textTransform: "uppercase",
+            color: "var(--text-mid)",
+          }}
+        >
+          Loading…
+        </span>
       </div>
     );
   }
@@ -18,6 +30,24 @@ function Router(): ReactElement {
     return <LobbyScreen />;
   }
   return <LoginScreen />;
+}
+
+function Chrome(): ReactElement {
+  const status = useAuthStore((s) => s.status);
+  const chromeTitle =
+    status === "authenticated"
+      ? "REDVOICE · LOBBY"
+      : status === "loading"
+        ? "REDVOICE · LOADING"
+        : "REDVOICE · LOGIN";
+
+  return (
+    <WindowChrome title={chromeTitle}>
+      <div key={status} className="rv-fade-in" style={{ minHeight: 0, height: "100%" }}>
+        <Router />
+      </div>
+    </WindowChrome>
+  );
 }
 
 export function App(): ReactElement {
@@ -28,7 +58,7 @@ export function App(): ReactElement {
 
   return (
     <AuthProvider>
-      <Router />
+      <Chrome />
     </AuthProvider>
   );
 }

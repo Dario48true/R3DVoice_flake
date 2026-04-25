@@ -8,6 +8,9 @@ import {
 } from "../lib/media.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import type { Resolution } from "../lib/prefs-store.js";
+import { Field } from "../components/Primitives.js";
+import { I } from "../components/Icons.js";
+import { IS_MAC } from "../lib/platform.js";
 
 export interface ScreenQuality {
   width: number;
@@ -132,117 +135,342 @@ export function PreJoinScreen(props: PreJoinScreenProps): ReactElement {
   }
 
   return (
-    <div className="centered">
-      <div className="form" style={{ maxWidth: 480 }}>
-        <h2 style={{ margin: 0 }}>Pre-join check</h2>
-        <div style={{ color: "var(--text-dim)" }}>Room: {props.roomId}</div>
+    <div style={{ display: "grid", placeItems: "center", height: "100%", padding: "var(--s-7)" }}>
+      <div
+        className="rv-card rv-fade-in"
+        data-glow="true"
+        style={{ width: "min(100%, 38rem)", padding: "var(--s-8)" }}
+      >
+        <div className="rv-corner-tag">PRE-JOIN · MIC CHECK</div>
 
-        <label>
-          <div className="section-title">Microphone</div>
-          <select
-            value={micDeviceId ?? ""}
-            onChange={(e) => { const v = e.target.value || null; setMicDeviceId(v); prefsActions().setMicDeviceId(v); }}
-          >
-            {mics.length === 0 && <option value="">No mic detected</option>}
-            {mics.map((m) => (
-              <option key={m.deviceId} value={m.deviceId}>{m.label}</option>
-            ))}
-          </select>
+        <div style={{ marginTop: "var(--s-3)", marginBottom: "var(--s-6)" }}>
+          <div className="rv-headline" style={{ fontSize: "var(--t-2xl)", marginBottom: "var(--s-2)" }}>
+            One last sound check.
+          </div>
           <div
-            aria-label="mic level"
-            style={{
-              marginTop: 6,
-              height: 6,
-              background: "var(--border)",
-              borderRadius: 3,
-              overflow: "hidden",
-            }}
+            className="rv-mono"
+            style={{ fontSize: "var(--t-xs)", color: "var(--text-dim)", letterSpacing: ".06em" }}
           >
-            <div
+            ROOM&nbsp;·&nbsp;<span style={{ color: "var(--text-mid)" }}>{props.roomId}</span>
+          </div>
+        </div>
+
+        <Field
+          label="Microphone"
+          right={
+            <span
+              className="rv-mono"
+              style={{ fontSize: "var(--t-2xs)", color: "var(--text-faint)" }}
+            >
+              INPUT · 48 kHz
+            </span>
+          }
+        >
+          <div style={{ position: "relative" }}>
+            <select
+              className="rv-select"
+              style={{ paddingLeft: "2.4rem" }}
+              value={micDeviceId ?? ""}
+              onChange={(e) => {
+                const v = e.target.value || null;
+                setMicDeviceId(v);
+                prefsActions().setMicDeviceId(v);
+              }}
+            >
+              {mics.length === 0 && <option value="">No mic detected</option>}
+              {mics.map((m) => (
+                <option key={m.deviceId} value={m.deviceId}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <I.Mic
+              size={14}
               style={{
-                width: `${Math.round(level * 100)}%`,
-                height: "100%",
-                background: "var(--accent)",
-                transition: "width 60ms linear",
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--text-mid)",
               }}
             />
           </div>
-        </label>
-
-        <label>
-          <div className="section-title">Speakers</div>
-          <select
-            value={speakerDeviceId ?? ""}
-            onChange={(e) => { const v = e.target.value || null; setSpeakerDeviceId(v); prefsActions().setSpeakerDeviceId(v); }}
+          <div
+            style={{
+              marginTop: "var(--s-3)",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--s-3)",
+            }}
           >
-            {speakers.length === 0 && <option value="">Default output</option>}
-            {speakers.map((s) => (
-              <option key={s.deviceId} value={s.deviceId}>{s.label}</option>
-            ))}
-          </select>
-        </label>
+            <div className="rv-vu" style={{ flex: 1, height: 10 }}>
+              <div className="rv-vu-fill" style={{ width: `${level * 100}%` }} />
+              <div className="rv-vu-ticks" />
+            </div>
+            <span
+              className="rv-mono"
+              style={{
+                fontSize: "var(--t-2xs)",
+                width: "3.6rem",
+                textAlign: "right",
+                color: level > 0.85 ? "var(--accent-glow)" : "var(--text-dim)",
+              }}
+            >
+              {Math.round(-60 + level * 60)} dB
+            </span>
+          </div>
+          <div
+            style={{
+              marginTop: "var(--s-2)",
+              fontSize: "var(--t-xs)",
+              color: "var(--text-dim)",
+            }}
+          >
+            Speak normally — we'll keep noise suppression on by default.
+          </div>
+        </Field>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ height: "var(--s-5)" }} />
+
+        <Field
+          label="Speakers"
+          right={
+            // real speaker test is a future enhancement
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              onClick={(e) => e.preventDefault()}
+              style={{ height: "1.6rem", padding: "0 var(--s-2)", fontSize: "var(--t-xs)" }}
+            >
+              <I.Wave size={12} /> Test
+            </button>
+          }
+        >
+          <div style={{ position: "relative" }}>
+            <select
+              className="rv-select"
+              style={{ paddingLeft: "2.4rem" }}
+              value={speakerDeviceId ?? ""}
+              onChange={(e) => {
+                const v = e.target.value || null;
+                setSpeakerDeviceId(v);
+                prefsActions().setSpeakerDeviceId(v);
+              }}
+            >
+              {speakers.length === 0 && <option value="">Default output</option>}
+              {speakers.map((s) => (
+                <option key={s.deviceId} value={s.deviceId}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <I.Headphones
+              size={14}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--text-mid)",
+              }}
+            />
+          </div>
+        </Field>
+
+        <hr className="rv-rule" style={{ margin: "var(--s-6) 0" }} />
+
+        <label className="rv-check">
           <input
             type="checkbox"
             checked={publishScreen}
             onChange={(e) => setPublishScreen(e.target.checked)}
           />
-          <span>Share a screen (you'll pick the window/monitor on join)</span>
+          <span className="rv-check-box" />
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
+            <I.Screen
+              size={16}
+              style={{ color: publishScreen ? "var(--accent-glow)" : "var(--text-mid)" }}
+            />
+            <span style={{ fontWeight: 500 }}>Share a screen</span>
+            <span style={{ color: "var(--text-faint)", fontSize: "var(--t-xs)" }}>
+              — you'll pick the window or monitor on join
+            </span>
+          </span>
         </label>
 
-        {publishScreen && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateRows: publishScreen ? "1fr" : "0fr",
+            transition: `grid-template-rows var(--d-slow) var(--ease-out)`,
+          }}
+        >
+          <div style={{ overflow: "hidden" }}>
+            <div
+              style={{
+                marginTop: publishScreen ? "var(--s-4)" : 0,
+                padding: "var(--s-4) var(--s-5)",
+                background: "color-mix(in oklch, var(--accent) 6%, var(--bg-elev-2))",
+                border: "1px solid color-mix(in oklch, var(--accent) 30%, var(--border-soft))",
+                borderRadius: "var(--r-md)",
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "var(--s-4) var(--s-5)",
+                alignItems: "center",
+              }}
+            >
+              <Field label="Resolution">
+                <Segmented
+                  options={["720p", "1080p", "1440p", "4K"]}
+                  value={resolution}
+                  onChange={(v) => {
+                    setResolution(v);
+                    prefsActions().setResolution(v as Resolution);
+                  }}
+                />
+              </Field>
+              <Field label="Frame rate">
+                <Segmented
+                  options={[30, 60]}
+                  value={frameRate}
+                  onChange={(v) => {
+                    setFrameRate(v as 30 | 60);
+                    prefsActions().setFrameRate(v as 30 | 60);
+                  }}
+                  suffix=" fps"
+                />
+              </Field>
+              <label className="rv-check" style={{ gridColumn: "1 / -1" }}>
+                <input
+                  type="checkbox"
+                  checked={shareAudio}
+                  onChange={(e) => {
+                    const v = e.target.checked;
+                    setShareAudio(v);
+                    prefsActions().setShareAudio(v);
+                  }}
+                />
+                <span className="rv-check-box" />
+                <span>
+                  Include system audio
+                  {IS_MAC && (
+                    <span
+                      style={{
+                        color: "var(--text-faint)",
+                        fontSize: "var(--t-xs)",
+                        marginLeft: "var(--s-2)",
+                      }}
+                    >
+                      (macOS asks for permission once)
+                    </span>
+                  )}
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {error && (
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-              paddingLeft: 24,
+              marginTop: "var(--s-4)",
+              color: "var(--accent-glow)",
+              fontSize: "var(--t-sm)",
+              padding: "var(--s-2) var(--s-3)",
+              border: "1px solid color-mix(in oklch, var(--accent) 40%, transparent)",
+              borderRadius: "var(--r-sm)",
+              background: "color-mix(in oklch, var(--accent) 8%, var(--bg-elev-2))",
             }}
           >
-            <label>
-              <div className="section-title">Resolution</div>
-              <select
-                value={resolution}
-                onChange={(e) => { const v = e.target.value as keyof typeof RESOLUTIONS; setResolution(v); prefsActions().setResolution(v as Resolution); }}
-              >
-                {Object.keys(RESOLUTIONS).map((key) => (
-                  <option key={key} value={key}>{key}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <div className="section-title">Frame rate</div>
-              <select
-                value={frameRate}
-                onChange={(e) => { const v = Number(e.target.value) as 30 | 60; setFrameRate(v); prefsActions().setFrameRate(v); }}
-              >
-                <option value={30}>30 fps</option>
-                <option value={60}>60 fps</option>
-              </select>
-            </label>
-            <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={shareAudio}
-                onChange={(e) => { const v = e.target.checked; setShareAudio(v); prefsActions().setShareAudio(v); }}
-              />
-              <span>Include system audio</span>
-            </label>
+            {error}
           </div>
         )}
 
-        {error && <div className="error">{error}</div>}
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={handleJoin} disabled={busy || mics.length === 0}>
-            {busy ? "Joining…" : "Join now"}
-          </button>
-          <button className="btn secondary" onClick={props.onCancel} disabled={busy}>
+        <div
+          style={{
+            marginTop: "var(--s-7)",
+            display: "flex",
+            gap: "var(--s-3)",
+            justifyContent: "flex-end",
+            alignItems: "center",
+          }}
+        >
+          <span
+            className="rv-mono"
+            style={{
+              fontSize: "var(--t-2xs)",
+              color: "var(--text-faint)",
+              marginRight: "auto",
+              letterSpacing: ".06em",
+            }}
+          >
+            ↵ ENTER TO JOIN
+          </span>
+          <button type="button" className="rv-btn" onClick={props.onCancel} disabled={busy}>
             Cancel
+          </button>
+          <button
+            type="button"
+            className="rv-btn"
+            data-variant="primary"
+            onClick={handleJoin}
+            style={{ minWidth: "9rem" }}
+            disabled={busy || mics.length === 0}
+          >
+            <I.Mic size={14} /> {busy ? "Joining…" : "Join now"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Segmented<T extends string | number>(props: {
+  options: T[];
+  value: T;
+  onChange: (v: T) => void;
+  suffix?: string;
+}): ReactElement {
+  const { options, value, onChange, suffix = "" } = props;
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        padding: 3,
+        background: "var(--bg-elev-3)",
+        border: "1px solid var(--border-soft)",
+        borderRadius: "var(--r-md)",
+        gap: 2,
+      }}
+    >
+      {options.map((o) => (
+        <button
+          key={String(o)}
+          type="button"
+          onClick={() => onChange(o)}
+          style={{
+            appearance: "none",
+            border: 0,
+            padding: "6px 14px",
+            borderRadius: "calc(var(--r-md) - 3px)",
+            background:
+              value === o
+                ? "linear-gradient(180deg, var(--accent-hover), var(--accent))"
+                : "transparent",
+            color: value === o ? "var(--on-accent)" : "var(--text-mid)",
+            fontSize: "var(--t-sm)",
+            fontWeight: 500,
+            fontFamily: "var(--font-mono)",
+            cursor: "pointer",
+            boxShadow: value === o ? "var(--shadow-1)" : "none",
+            transition: "all var(--d-base) var(--ease-out)",
+          }}
+        >
+          {o}
+          {suffix}
+        </button>
+      ))}
     </div>
   );
 }
