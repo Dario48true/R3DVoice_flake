@@ -656,6 +656,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   } | null>(null);
   const [layout, setLayout] = useState<LayoutMode>("auto");
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [roomInfoOpen, setRoomInfoOpen] = useState(false);
 
   const snapshot: RoomStateSnapshot = useSyncExternalStore(
     (cb) => roomWrapper.subscribe(() => cb()),
@@ -815,11 +816,13 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         setMaximizedId(null);
         setMenu(null);
         setFocusedId(null);
+        setRoomInfoOpen(false);
       }
     }
     function onMouseDown(e: globalThis.MouseEvent): void {
       if (e.button !== 0) return;
       setMenu(null);
+      setRoomInfoOpen(false);
     }
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onMouseDown);
@@ -995,11 +998,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const localDisplayName = user?.displayName ?? snapshot.local?.name ?? snapshot.local?.identity ?? "You";
   const localAvatarChar = (localDisplayName.charAt(0) || "?").toUpperCase();
 
-  const sharingBadgeText =
-    sharingParticipants.length === 1
-      ? `${sharingParticipants[0]?.name ?? "Someone"} sharing`
-      : `${sharingParticipants.length} people sharing`;
-
   return (
     <div
       style={{ display: "grid", gridTemplateRows: "auto 1fr auto", height: "100%" }}
@@ -1025,23 +1023,17 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           <span className="rv-badge" data-tone="live">
             <span className="pip" /> LIVE · {fmtTime(elapsed)}
           </span>
-          {sharingParticipants.length > 0 && (
-            <button
-              className="rv-badge"
-              data-tone="red"
-              onClick={() => {
-                if (focusSharer) setMaximizedId(focusSharer.id);
-              }}
-              style={{
-                cursor: "pointer",
-                background: "transparent",
-                font: "inherit",
-              }}
-              title="Click to focus"
-            >
-              <I.Screen size={11} /> {sharingBadgeText}
-            </button>
-          )}
+          <button
+            className="rv-btn rv-btn-icon"
+            data-variant="ghost"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setRoomInfoOpen((v) => !v)}
+            title="Room details"
+            data-active={roomInfoOpen}
+            style={{ padding: "0 var(--s-2)" }}
+          >
+            <I.Star size={14} style={{ color: "var(--text-mid)" }} />
+          </button>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
@@ -1070,17 +1062,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             >
               Error: {conn.message}
             </span>
-          ) : (
-            <>
-              <NetMeter quality={snapshot.local?.connectionQuality} />
-              <span
-                className="rv-mono"
-                style={{ fontSize: "var(--t-2xs)", color: "var(--text-faint)" }}
-              >
-                {tiles.length} participants
-              </span>
-            </>
-          )}
+          ) : null}
           <CopyLinkButton roomId={props.roomId} serverUrl={serverUrl} />
           <button
             className="rv-btn rv-btn-icon"
@@ -1182,13 +1164,9 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
                       style={{
                         fontSize: 10,
                         color: "var(--text-faint)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
                       }}
                     >
                       {tileSharing ? "sharing" : tile.isSpeaking ? "speaking" : "idle"}
-                      <NetMeter quality={tile.quality} height={8} />
                     </span>
                   </div>
                   {tile.muted ? (
@@ -1201,20 +1179,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             })}
           </div>
 
-          <div className="rv-section-head" style={{ marginTop: "var(--s-6)" }}>
-            <span className="rv-label">Room</span>
-          </div>
-          <KV
-            label="ID"
-            value={
-              <span className="rv-mono" style={{ fontSize: 10 }}>
-                {props.roomId.slice(0, 16)}…
-              </span>
-            }
-          />
-          <KV label="Codec" value="OPUS · 48 kHz" />
-          <KV label="Region" value="auto · self-hosted" />
-          <KV label="Recording" value={<span style={{ color: "var(--text-faint)" }}>off</span>} />
         </aside>
 
         {/* Tiles */}
@@ -1305,6 +1269,58 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           />
         )}
       </div>
+
+      {/* Room info popover */}
+      {roomInfoOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: 56,
+            left: "var(--s-5)",
+            zIndex: 30,
+            width: 300,
+            padding: "var(--s-4) var(--s-5)",
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r-md)",
+            boxShadow: "var(--shadow-2)",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <div className="rv-section-head" style={{ marginBottom: "var(--s-3)" }}>
+            <span className="rv-label">Room</span>
+            <button
+              type="button"
+              onClick={() => setRoomInfoOpen(false)}
+              aria-label="Close"
+              style={{
+                marginLeft: "auto",
+                appearance: "none",
+                border: 0,
+                background: "transparent",
+                color: "var(--text-faint)",
+                cursor: "pointer",
+                padding: 2,
+              }}
+            >
+              <I.X size={12} />
+            </button>
+          </div>
+          <KV
+            label="ID"
+            value={
+              <span className="rv-mono" style={{ fontSize: 10 }}>
+                {props.roomId.slice(0, 16)}…
+              </span>
+            }
+          />
+          <KV label="Codec" value="OPUS · 48 kHz" />
+          <KV label="Region" value="auto · self-hosted" />
+          <KV label="Recording" value={<span style={{ color: "var(--text-faint)" }}>off</span>} />
+        </div>
+      )}
 
       {/* Control bar */}
       <footer
