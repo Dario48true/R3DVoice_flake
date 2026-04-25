@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, desktopCapturer, ipcMain, Menu, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, crashReporter, desktopCapturer, dialog, ipcMain, Menu, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { existsSync, writeFileSync, rmSync } from "node:fs";
 import { saveToken, getToken, clearToken } from "./token-store.js";
@@ -130,6 +130,45 @@ async function createWindow(splash: BrowserWindow | null): Promise<BrowserWindow
       if (!win.isDestroyed()) win.show();
       closeSplash(splash);
     }, 300);
+  });
+
+  // Surface renderer crashes — without this the user sees the BrowserWindow
+  // chrome holding up an empty black canvas with no idea what happened.
+  // Append to a per-user log so we can reconstruct what crashed.
+  win.webContents.on("render-process-gone", (_evt, details) => {
+    const ts = new Date().toISOString();
+    const line = `[${ts}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}\n`;
+    try {
+      const fs = require("node:fs") as typeof import("node:fs");
+      fs.appendFileSync(join(app.getPath("userData"), "renderer-crash.log"), line);
+    } catch { /* logging best-effort */ }
+    if (!app.isReady() || win.isDestroyed()) return;
+    void dialog.showMessageBox(win, {
+      type: "error",
+      title: "RedVoice — renderer crashed",
+      message: `The window stopped rendering (${details.reason}).`,
+      detail:
+        `Exit code: ${details.exitCode}\n\n` +
+        `A log was written to:\n${join(app.getPath("userData"), "renderer-crash.log")}\n\n` +
+        `Click "Reload" to try again, or "Quit" to close RedVoice.`,
+      buttons: ["Reload", "Quit"],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0 && !win.isDestroyed()) {
+        win.webContents.reload();
+      } else {
+        app.quit();
+      }
+    }).catch(() => { /* dialog dismissed */ });
+  });
+  win.webContents.on("did-fail-load", (_evt, errorCode, errorDescription, validatedURL) => {
+    const ts = new Date().toISOString();
+    const line = `[${ts}] did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}\n`;
+    try {
+      const fs = require("node:fs") as typeof import("node:fs");
+      fs.appendFileSync(join(app.getPath("userData"), "renderer-crash.log"), line);
+    } catch { /* logging best-effort */ }
   });
 
   // Setting applicationMenu to null drops Electron's default accelerators
