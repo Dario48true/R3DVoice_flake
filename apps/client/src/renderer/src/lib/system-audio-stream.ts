@@ -91,22 +91,21 @@ let active: ActiveStream | null = null;
  * Starts the native helper and wires its PCM output into a MediaStream.
  * Returns the MediaStream on success, or null if unavailable.
  *
- * The returned stream's audio track stays live until `stopSystemAudioStream()`
- * is called, the helper exits, or the caller drops references and the
- * AudioContext is GC'd.
+ * Pass `includePid` to capture only one process (per-app share). Without it,
+ * the helper captures system mix excluding RedVoice.
  */
-export async function startSystemAudioStream(): Promise<MediaStream | null> {
+export async function startSystemAudioStream(
+  options: { includePid?: number } = {},
+): Promise<MediaStream | null> {
   if (active) {
     return active.destination.stream;
   }
 
-  // Bridge availability — feature gate on the renderer side too in case an
-  // old preload is somehow loaded.
   if (typeof window === "undefined" || !window.redvoice?.startSystemAudioCapture) {
     return null;
   }
 
-  const result = await window.redvoice.startSystemAudioCapture();
+  const result = await window.redvoice.startSystemAudioCapture(options);
   if (result !== "started") return null;
 
   const fmt = await window.redvoice.systemAudioFormat();

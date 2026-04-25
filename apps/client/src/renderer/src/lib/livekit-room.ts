@@ -217,10 +217,11 @@ export class LiveKitRoom {
    *   2. Linux PipeWire venmic device (per-app or system-mix-minus-self)
    *   3. getDisplayMedia({audio:true, video:false}) — Windows fallback
    *
-   * `linuxIncludeProcessId` (optional) restricts Linux capture to a single
-   * app's audio. Omit for system-wide-minus-RedVoice.
+   * `includeProcessId` restricts capture to a single app: a process.id
+   * string for Linux/venmic, or a numeric PID (as string) on Windows for
+   * the WASAPI helper's --include-pid mode.
    */
-  async enableScreenShareAudio(linuxIncludeProcessId?: string): Promise<boolean> {
+  async enableScreenShareAudio(includeProcessId?: string): Promise<boolean> {
     if (this.room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)) {
       return true;
     }
@@ -231,13 +232,22 @@ export class LiveKitRoom {
     let auxStream: MediaStream | null = null;
 
     // 1. Native WASAPI filter
-    try {
-      const stream = await startSystemAudioStream();
-      track = stream?.getAudioTracks()[0] ?? null;
-    } catch { /* */ }
-    if (track) {
-      // eslint-disable-next-line no-console
-      console.log("[screenshare] system audio filtered via native helper (your voice excluded)");
+    if (platform === "win32") {
+      try {
+        const winPid = includeProcessId ? Number.parseInt(includeProcessId, 10) : undefined;
+        const stream = await startSystemAudioStream(
+          Number.isFinite(winPid) ? { includePid: winPid as number } : {},
+        );
+        track = stream?.getAudioTracks()[0] ?? null;
+      } catch { /* */ }
+      if (track) {
+        // eslint-disable-next-line no-console
+        console.log(
+          includeProcessId
+            ? `[screenshare] capturing PID ${includeProcessId} via WASAPI`
+            : "[screenshare] system audio filtered via native helper (your voice excluded)",
+        );
+      }
     }
 
     // 2. Linux: ask main to set up a virtual sink that excludes RedVoice's
@@ -248,7 +258,7 @@ export class LiveKitRoom {
       let routingEnabled = false;
       try {
         const routing = await window.redvoice.enableLinuxAudioRouting(
-          linuxIncludeProcessId ? { includeProcessId: linuxIncludeProcessId } : undefined,
+          includeProcessId ? { includeProcessId } : undefined,
         );
         if (routing) {
           preferLabel = routing.monitorDeviceDescription;

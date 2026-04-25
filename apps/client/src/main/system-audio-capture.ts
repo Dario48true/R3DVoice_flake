@@ -8,7 +8,7 @@
 // the caller treats "no session started" as a graceful fallback.
 
 import { app, ipcMain, type WebContents } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -54,17 +54,77 @@ function safeSend(wc: WebContents, channel: string, ...args: unknown[]): void {
   }
 }
 
+export interface AudioSessionInfo {
+  pid: number;
+  imageName: string;
+  displayName: string;
+}
+
+/** Spawn the helper with --list-sessions, parse the TSV output. Empty list on any error. */
+export function listWindowsAudioSessions(): Promise<AudioSessionInfo[]> {
+  return new Promise((resolve) => {
+    const exe = helperPath();
+    if (!exe) return resolve([]);
+
+    let child: ChildProcess;
+    try {
+      child = spawn(exe, ["--list-sessions"], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch {
+      return resolve([]);
+    }
+
+    let stdout = "";
+    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString("utf8"); });
+    child.on("error", () => resolve([]));
+    child.on("exit", () => {
+      const sessions: AudioSessionInfo[] = [];
+      const ourPids = new Set<string>();
+      for (const proc of app.getAppMetrics()) {
+        if (proc.pid) ourPids.add(String(proc.pid));
+      }
+      for (const line of stdout.split("\n")) {
+        if (!line.trim()) continue;
+        const parts = line.split("\t");
+        if (parts.length < 2) continue;
+        const pidStr = parts[0]!;
+        const imageName = parts[1]!;
+        const displayName = parts[2] ?? "";
+        const pid = Number.parseInt(pidStr, 10);
+        if (!Number.isFinite(pid)) continue;
+        // Drop our own process tree so users don't pick RedVoice.
+        if (ourPids.has(pidStr)) continue;
+        sessions.push({ pid, imageName, displayName });
+      }
+      // Stable order: alphabetical by display label.
+      sessions.sort((a, b) => labelFor(a).localeCompare(labelFor(b)));
+      resolve(sessions);
+    });
+
+    setTimeout(() => {
+      try { child.kill(); } catch { /* */ }
+    }, 5_000);
+  });
+}
+
+function labelFor(s: AudioSessionInfo): string {
+  return s.displayName?.trim() || s.imageName.replace(/\.exe$/i, "");
+}
+
 /**
  * Start the helper and stream PCM chunks to `webContents`. Resolves to:
  *   - "started" if the helper spawned and produced its first packet within timeout
  *   - "unsupported" if the binary isn't available, OR spawn failed, OR the helper
  *     errored before the first packet (Windows build too old, etc.)
  *
- * Only one session at a time. Calling start() while a session is live returns
- * "started" immediately on the existing one.
+ * Pass `includePid` to capture only that process's audio (per-app share).
+ * Default is exclude-self (system mix minus RedVoice).
  */
 export function startSystemAudioCapture(
   webContents: WebContents,
+  options: { includePid?: number } = {},
 ): Promise<"started" | "unsupported"> {
   if (session && !session.stopped) {
     return Promise.resolve("started");
@@ -73,14 +133,13 @@ export function startSystemAudioCapture(
   const exe = helperPath();
   if (!exe) return Promise.resolve("unsupported");
 
-  // PID to exclude: this Electron main process. Its child renderer/utility
-  // processes share the same audio session tree, so excluding the parent's
-  // tree covers them.
-  const targetPid = process.pid;
+  const args: string[] = options.includePid
+    ? ["--include-pid", String(options.includePid)]
+    : ["--exclude-pid", String(process.pid)];
 
   let child: ChildProcessWithoutNullStreams;
   try {
-    child = spawn(exe, ["--exclude-pid", String(targetPid)], {
+    child = spawn(exe, args, {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -154,11 +213,12 @@ export function stopSystemAudioCapture(): void {
 }
 
 export function registerSystemAudioCaptureHandlers(): void {
-  ipcMain.handle("system-audio:start", async (event) => {
-    return startSystemAudioCapture(event.sender);
+  ipcMain.handle("system-audio:start", async (event, options?: { includePid?: number }) => {
+    return startSystemAudioCapture(event.sender, options ?? {});
   });
   ipcMain.handle("system-audio:stop", () => {
     stopSystemAudioCapture();
   });
   ipcMain.handle("system-audio:format", () => SYSTEM_AUDIO_FORMAT);
+  ipcMain.handle("system-audio:list-sessions", () => listWindowsAudioSessions());
 }

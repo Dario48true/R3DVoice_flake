@@ -62,12 +62,16 @@ export interface RedVoiceBridge {
   /** Open the OS file manager at the local crash-dump directory. */
   openCrashDumps(): Promise<void>;
   /**
-   * Start the native system-audio capture helper (Windows-only). Resolves to
-   * "started" when the helper is producing PCM, or "unsupported" if the
+   * Start the native system-audio capture helper (Windows-only). Pass
+   * `includePid` to capture only that process's audio (per-app share);
+   * otherwise the helper captures system mix excluding RedVoice itself.
+   * Resolves to "started" when PCM is flowing, or "unsupported" if the
    * binary isn't bundled / OS build doesn't support PROCESS_LOOPBACK_MODE /
-   * activation failed. Use `onSystemAudioChunk` to receive PCM frames.
+   * activation failed.
    */
-  startSystemAudioCapture(): Promise<"started" | "unsupported">;
+  startSystemAudioCapture(options?: { includePid?: number }): Promise<"started" | "unsupported">;
+  /** Windows-only: list active audio sessions for the share-audio source picker. */
+  listWindowsAudioSessions(): Promise<WindowsAudioSessionInfo[]>;
   /** Stop a running system-audio capture session. No-op if none. */
   stopSystemAudioCapture(): Promise<void>;
   /** PCM format the helper emits — needed to reconstruct a MediaStream. */
@@ -95,6 +99,12 @@ export interface LinuxAudioSourceSummary {
   appName: string;
   processId: string;
   iconName?: string;
+}
+
+export interface WindowsAudioSessionInfo {
+  pid: number;
+  imageName: string;
+  displayName: string;
 }
 
 export interface SystemAudioFormat {

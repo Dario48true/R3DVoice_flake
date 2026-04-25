@@ -23,7 +23,7 @@ import {
 import type { PreJoinSelection } from "./PreJoinScreen.js";
 import { SettingsModal } from "../components/SettingsModal.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
-import type { LinuxAudioSourceSummary } from "../../../shared/bridge-types.js";
+import type { LinuxAudioSourceSummary, WindowsAudioSessionInfo } from "../../../shared/bridge-types.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
@@ -566,6 +566,11 @@ function SpeakerLayout({
   );
 }
 
+interface AudioSourceOption {
+  pid: string;
+  label: string;
+}
+
 function ShareAudioControl({
   enabled,
   roomWrapper,
@@ -574,19 +579,31 @@ function ShareAudioControl({
   roomWrapper: LiveKitRoom;
 }): ReactElement {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [sources, setSources] = useState<LinuxAudioSourceSummary[]>([]);
+  const [sources, setSources] = useState<AudioSourceOption[]>([]);
   const [selectedPid, setSelectedPid] = useState<string | null>(null);
   const platform = window.redvoice?.platform();
-  const showPicker = platform === "linux"; // Phase 2 windows picker comes later
+  const showPicker = platform === "linux" || platform === "win32";
 
   useEffect(() => {
     if (!pickerOpen || !showPicker) return;
     let cancelled = false;
-    void window.redvoice.listLinuxAudioSources().then((s) => {
-      if (!cancelled) setSources(s);
-    });
+    const load = async (): Promise<void> => {
+      let opts: AudioSourceOption[] = [];
+      if (platform === "linux") {
+        const list: LinuxAudioSourceSummary[] = await window.redvoice.listLinuxAudioSources();
+        opts = list.map((s) => ({ pid: s.processId, label: s.appName }));
+      } else if (platform === "win32") {
+        const list: WindowsAudioSessionInfo[] = await window.redvoice.listWindowsAudioSessions();
+        opts = list.map((s) => ({
+          pid: String(s.pid),
+          label: s.displayName?.trim() || s.imageName.replace(/\.exe$/i, ""),
+        }));
+      }
+      if (!cancelled) setSources(opts);
+    };
+    void load();
     return () => { cancelled = true; };
-  }, [pickerOpen, showPicker]);
+  }, [pickerOpen, showPicker, platform]);
 
   // Close picker on outside click via the existing global handler.
   useEffect(() => {
@@ -609,7 +626,7 @@ function ShareAudioControl({
   }
 
   const selectedLabel = selectedPid
-    ? sources.find((s) => s.processId === selectedPid)?.appName ?? `PID ${selectedPid}`
+    ? sources.find((s) => s.pid === selectedPid)?.label ?? `PID ${selectedPid}`
     : "All apps";
 
   return (
@@ -684,11 +701,11 @@ function ShareAudioControl({
           ) : (
             sources.map((s) => (
               <SourceMenuItem
-                key={`${s.appName}-${s.processId}`}
-                active={selectedPid === s.processId}
-                onClick={() => void pickSource(s.processId)}
+                key={`${s.label}-${s.pid}`}
+                active={selectedPid === s.pid}
+                onClick={() => void pickSource(s.pid)}
               >
-                {s.appName}
+                {s.label}
               </SourceMenuItem>
             ))
           )}

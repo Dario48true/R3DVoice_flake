@@ -37,9 +37,10 @@ const bridge: RedVoiceBridge = {
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
   setCrashReporting: (enabled) => ipcRenderer.invoke("app:set-crash-reporting", enabled),
   openCrashDumps: () => ipcRenderer.invoke("app:open-crash-dumps"),
-  startSystemAudioCapture: () => ipcRenderer.invoke("system-audio:start"),
+  startSystemAudioCapture: (options) => ipcRenderer.invoke("system-audio:start", options),
   stopSystemAudioCapture: () => ipcRenderer.invoke("system-audio:stop"),
   systemAudioFormat: () => ipcRenderer.invoke("system-audio:format"),
+  listWindowsAudioSessions: () => ipcRenderer.invoke("system-audio:list-sessions"),
   onSystemAudioChunk: (cb) => {
     const handler = (_evt: Electron.IpcRendererEvent, chunk: Uint8Array): void => cb(chunk);
     ipcRenderer.on("system-audio:chunk", handler);
