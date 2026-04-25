@@ -9,11 +9,12 @@ import { listAudioInputs, listAudioOutputs, type DeviceInfo } from "../lib/media
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import { MOD_KEY, SHIFT_KEY } from "../lib/platform.js";
 import type { MediaPermissionStatus } from "../../../shared/bridge-types.js";
+import { useAuthStore } from "../lib/auth-context.js";
 import { I } from "./Icons.js";
 import { Modal } from "./Modal.js";
 import { Field } from "./Primitives.js";
 
-type Tab = "devices" | "keybinds" | "compat" | "about";
+type Tab = "devices" | "keybinds" | "account" | "compat" | "about";
 
 // Local copy of the designer's kbd inline style. Will be lifted to a shared
 // helper once a third call site appears.
@@ -57,6 +58,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }): ReactElemen
             label="Keybinds"
           />
           <NavButton
+            active={tab === "account"}
+            onClick={() => setTab("account")}
+            icon={<I.Logout size={14} />}
+            label="Account"
+          />
+          <NavButton
             active={tab === "compat"}
             onClick={() => setTab("compat")}
             icon={<I.Grid size={14} />}
@@ -74,6 +81,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): ReactElemen
         <div className="rv-scroll" style={{ padding: "var(--s-6) var(--s-7)", overflowY: "auto", minHeight: 0 }}>
           {tab === "devices" && <DevicesTab />}
           {tab === "keybinds" && <KeybindsTab />}
+          {tab === "account" && <AccountTab onClose={onClose} />}
           {tab === "compat" && <CompatTab />}
           {tab === "about" && <AboutTab />}
         </div>
@@ -731,6 +739,122 @@ function PermRow({
           {display}
         </span>
       </span>
+    </div>
+  );
+}
+
+function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
+  const user = useAuthStore((s) => s.user);
+  const serverUrl = useAuthStore((s) => s.serverUrl);
+  const logout = useAuthStore((s) => s.logout);
+  const [confirming, setConfirming] = useState(false);
+
+  const handleSwitch = async (): Promise<void> => {
+    await logout();
+    onClose();
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)", maxWidth: 480 }}>
+      <div className="rv-section-head">
+        <span className="rv-label">Signed in</span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-3)",
+          padding: "var(--s-3) var(--s-4)",
+          background: "var(--bg-elev-2)",
+          border: "1px solid var(--border-soft)",
+          borderRadius: "var(--r-md)",
+        }}
+      >
+        <span className="rv-avatar" data-tone="1" data-size="lg">
+          {(user?.displayName ?? "?").charAt(0).toUpperCase()}
+        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <span style={{ fontWeight: 500 }}>{user?.displayName ?? "(unknown)"}</span>
+          <span
+            className="rv-mono"
+            style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", overflow: "hidden", textOverflow: "ellipsis" }}
+          >
+            {user?.email ?? ""}
+          </span>
+        </div>
+      </div>
+
+      <div className="rv-section-head">
+        <span className="rv-label">Server</span>
+      </div>
+      <div
+        style={{
+          padding: "var(--s-3) var(--s-4)",
+          background: "var(--bg-elev-2)",
+          border: "1px solid var(--border-soft)",
+          borderRadius: "var(--r-md)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+        }}
+      >
+        <span className="rv-mono" style={{ fontSize: "var(--t-sm)", wordBreak: "break-all" }}>
+          {serverUrl}
+        </span>
+        <span style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)" }}>
+          Self-hosted instance
+        </span>
+      </div>
+
+      <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
+        <span className="rv-label">Actions</span>
+      </div>
+      {!confirming ? (
+        <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+          <button type="button" className="rv-btn" onClick={() => setConfirming(true)}>
+            Switch server
+          </button>
+          <button type="button" className="rv-btn" data-variant="ghost" onClick={() => void handleSwitch()}>
+            Sign out
+          </button>
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "var(--s-4)",
+            background: "color-mix(in oklch, var(--accent) 8%, var(--bg-elev-2))",
+            border: "1px solid color-mix(in oklch, var(--accent) 35%, var(--border))",
+            borderRadius: "var(--r-md)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--s-3)",
+          }}
+        >
+          <div style={{ fontSize: "var(--t-sm)", color: "var(--text)", lineHeight: 1.5 }}>
+            Switching servers signs you out on this device and returns to the login screen so you
+            can change the Server URL. Your account on{" "}
+            <span className="rv-mono">{serverUrl}</span> is unaffected.
+          </div>
+          <div style={{ display: "flex", gap: "var(--s-2)" }}>
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="primary"
+              onClick={() => void handleSwitch()}
+            >
+              Sign out + switch
+            </button>
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
