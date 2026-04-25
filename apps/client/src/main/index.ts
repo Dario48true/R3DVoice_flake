@@ -14,6 +14,22 @@ import { writeDesktopEntry, resolveIconPath } from "./desktop-integration.js";
 app.setName("RedVoice");
 app.commandLine.appendSwitch("class", "RedVoice");
 
+// When launched from a desktop-file or taskbar (no attached terminal),
+// process.stdout/stderr are closed pipes. Any console.* write — ours or
+// from a dep like electron-updater — throws EPIPE. Without these guards
+// the main process crashes before the window opens.
+function swallowEpipe(err: NodeJS.ErrnoException): void {
+  if (err.code === "EPIPE") return;
+  throw err;
+}
+process.stdout.on("error", swallowEpipe);
+process.stderr.on("error", swallowEpipe);
+process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EPIPE") return;
+  // Re-throw anything else so we don't silently swallow real bugs.
+  throw err;
+});
+
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
 
