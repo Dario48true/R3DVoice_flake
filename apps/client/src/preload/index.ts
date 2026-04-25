@@ -31,6 +31,10 @@ const bridge: RedVoiceBridge = {
     });
     return () => ipcRenderer.off("deep-link", handler);
   },
+  getMediaPermission: (kind) => ipcRenderer.invoke("perm:media-status", kind),
+  askMediaPermission: (kind) => ipcRenderer.invoke("perm:ask-media", kind),
+  openMacScreenSettings: () => ipcRenderer.invoke("perm:open-mac-screen-settings"),
+  openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
 };
 
 contextBridge.exposeInMainWorld("redvoice", bridge);

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, screen, session } from "electron";
+import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { existsSync, writeFileSync, rmSync } from "node:fs";
 import { saveToken, getToken, clearToken } from "./token-store.js";
@@ -152,6 +152,31 @@ function registerIpcHandlers(): void {
     } else {
       rmSync(flagPath, { force: true });
     }
+  });
+  // macOS media-permission introspection. On non-mac platforms these APIs
+  // are no-ops ("granted" / resolves true) so the renderer can call them
+  // unconditionally without platform checks at every call site.
+  ipcMain.handle("perm:media-status", (_evt, kind: unknown) => {
+    if (process.platform !== "darwin") return "granted";
+    if (kind !== "microphone" && kind !== "camera" && kind !== "screen") return "unknown";
+    return systemPreferences.getMediaAccessStatus(kind);
+  });
+  ipcMain.handle("perm:ask-media", async (_evt, kind: unknown) => {
+    if (process.platform !== "darwin") return true;
+    if (kind !== "microphone" && kind !== "camera") return true;
+    return systemPreferences.askForMediaAccess(kind);
+  });
+  ipcMain.handle("perm:open-mac-screen-settings", async () => {
+    if (process.platform !== "darwin") return;
+    await shell.openExternal(
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+    );
+  });
+  ipcMain.handle("shell:open-external", async (_evt, url: unknown) => {
+    if (typeof url !== "string") return;
+    // Only http(s) — prevents file:// or javascript: escapes.
+    if (!/^https?:\/\//i.test(url)) return;
+    await shell.openExternal(url);
   });
   ipcMain.handle("app:relaunch", () => {
     app.relaunch();

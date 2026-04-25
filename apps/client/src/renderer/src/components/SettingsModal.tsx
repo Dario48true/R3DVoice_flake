@@ -8,6 +8,7 @@ import {
 import { listAudioInputs, listAudioOutputs, type DeviceInfo } from "../lib/media.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import { MOD_KEY, SHIFT_KEY } from "../lib/platform.js";
+import type { MediaPermissionStatus } from "../../../shared/bridge-types.js";
 import { I } from "./Icons.js";
 import { Modal } from "./Modal.js";
 import { Field } from "./Primitives.js";
@@ -521,31 +522,135 @@ function CompatTab(): ReactElement {
       <div className="rv-section-head" style={{ marginTop: "var(--s-3)" }}>
         <span className="rv-label">Permissions</span>
       </div>
-      {/* real permission probing in Phase 5 T5 */}
-      <PermRow label="Microphone" status="granted" />
-      <PermRow label="Camera" status="not requested" />
-      <PermRow label="Screen recording" status="granted" />
-      <PermRow label="Notifications" status="not requested" />
+      <PermissionRows />
     </div>
   );
 }
 
-function PermRow({ label, status }: { label: string; status: string }): ReactElement {
-  const tone = status === "granted" ? "live" : status === "denied" ? "red" : undefined;
+function PermissionRows(): ReactElement {
+  const [mic, setMic] = useState<MediaPermissionStatus>("unknown");
+  const [cam, setCam] = useState<MediaPermissionStatus>("unknown");
+  const [scr, setScr] = useState<MediaPermissionStatus>("unknown");
+  const isMac = window.redvoice.platform() === "darwin";
+
+  const refresh = async (): Promise<void> => {
+    const [m, c, s] = await Promise.all([
+      window.redvoice.getMediaPermission("microphone"),
+      window.redvoice.getMediaPermission("camera"),
+      window.redvoice.getMediaPermission("screen"),
+    ]);
+    setMic(m);
+    setCam(c);
+    setScr(s);
+  };
+
+  useEffect(() => {
+    void refresh();
+    // Re-check on focus — user may have just toggled the OS setting.
+    const onFocus = (): void => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  return (
+    <>
+      <PermRow
+        label="Microphone"
+        status={mic}
+        action={
+          isMac && mic !== "granted" ? (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              style={{ height: "1.6rem", fontSize: "var(--t-xs)" }}
+              onClick={() => {
+                void window.redvoice.askMediaPermission("microphone").then(() => void refresh());
+              }}
+            >
+              Grant
+            </button>
+          ) : null
+        }
+      />
+      <PermRow
+        label="Camera"
+        status={cam}
+        action={
+          isMac && cam !== "granted" ? (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              style={{ height: "1.6rem", fontSize: "var(--t-xs)" }}
+              onClick={() => {
+                void window.redvoice.askMediaPermission("camera").then(() => void refresh());
+              }}
+            >
+              Grant
+            </button>
+          ) : null
+        }
+      />
+      <PermRow
+        label="Screen recording"
+        status={scr}
+        action={
+          isMac && scr !== "granted" ? (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              style={{ height: "1.6rem", fontSize: "var(--t-xs)" }}
+              onClick={() => void window.redvoice.openMacScreenSettings()}
+            >
+              Open Settings
+            </button>
+          ) : null
+        }
+      />
+    </>
+  );
+}
+
+function PermRow({
+  label,
+  status,
+  action,
+}: {
+  label: string;
+  status: MediaPermissionStatus;
+  action?: React.ReactNode;
+}): ReactElement {
+  const tone = status === "granted" ? "live" : status === "denied" ? "red" : "amber";
+  const display =
+    status === "not-determined"
+      ? "not requested"
+      : status === "granted"
+        ? "granted"
+        : status === "denied"
+          ? "denied"
+          : status === "restricted"
+            ? "restricted"
+            : "unknown";
   return (
     <div
       style={{
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        gap: "var(--s-3)",
         padding: "10px 0",
         borderBottom: "1px solid var(--border-soft)",
       }}
     >
       <span style={{ fontSize: "var(--t-sm)" }}>{label}</span>
-      <span className="rv-badge" data-tone={tone}>
-        {tone === "live" && <span className="pip" />}
-        {status}
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
+        {action}
+        <span className="rv-badge" data-tone={tone}>
+          {tone === "live" && <span className="pip" />}
+          {display}
+        </span>
       </span>
     </div>
   );

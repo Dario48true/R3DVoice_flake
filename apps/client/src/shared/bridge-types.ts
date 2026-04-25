@@ -19,6 +19,9 @@ export interface SplashStatus {
   message?: string;
 }
 
+export type MediaPermissionKind = "microphone" | "camera" | "screen";
+export type MediaPermissionStatus = "not-determined" | "granted" | "denied" | "restricted" | "unknown";
+
 export interface RedVoiceBridge {
   /** Store a session token encrypted at rest via Electron safeStorage. */
   saveToken(token: string): Promise<void>;
@@ -46,6 +49,14 @@ export interface RedVoiceBridge {
    * Returns an unsubscribe function.
    */
   onDeepLink(cb: (link: DeepLinkEvent) => void): () => void;
+  /** macOS media permission status. On non-mac platforms returns "granted". */
+  getMediaPermission(kind: MediaPermissionKind): Promise<MediaPermissionStatus>;
+  /** macOS mic/camera permission prompt. No-op on non-mac; screen is not promptable. */
+  askMediaPermission(kind: "microphone" | "camera"): Promise<boolean>;
+  /** macOS: open System Settings → Privacy → Screen Recording. No-op elsewhere. */
+  openMacScreenSettings(): Promise<void>;
+  /** Open an http(s) URL in the default browser. Other schemes are rejected. */
+  openExternal(url: string): Promise<void>;
 }
 
 export type DeepLinkEvent = { type: "join-room"; roomId: string };
