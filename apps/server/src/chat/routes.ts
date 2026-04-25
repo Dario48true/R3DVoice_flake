@@ -5,6 +5,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { AuthError, ValidationError, NotFoundError } from "../errors.js";
 import { isDmParticipant, isThreadType, type ThreadType } from "./threads.js";
 import { broadcastToThread } from "./ws-state.js";
+import { wrapAtRest, unwrapAtRest } from "../crypto-at-rest.js";
 
 const sendBodySchema = z.object({
   threadType: z.enum(["room", "dm"]),
@@ -46,17 +47,36 @@ function toDTO(m: {
   deletedAt: Date | null;
   author: { displayName: string };
 }): MessageDTO {
+  // Room messages may be wrapped at rest with the server master key. DMs are
+  // already client-side ciphertext envelopes — never wrapped server-side.
+  let body: string | null = null;
+  if (!m.deletedAt) {
+    if (m.threadType === "room") {
+      try {
+        body = unwrapAtRest(m.body);
+      } catch {
+        body = m.body; // fall back to raw if unwrap fails (key changed?)
+      }
+    } else {
+      body = m.body;
+    }
+  }
   return {
     id: m.id,
     threadType: m.threadType as ThreadType,
     threadId: m.threadId,
     authorId: m.authorId,
     authorName: m.author.displayName,
-    body: m.deletedAt ? null : m.body,
+    body,
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt?.toISOString() ?? null,
     deletedAt: m.deletedAt?.toISOString() ?? null,
   };
+}
+
+/** Wrap room-chat bodies at rest. DMs pass through (client already encrypted). */
+function bodyForStorage(threadType: ThreadType, body: string): string {
+  return threadType === "room" ? wrapAtRest(body) : body;
 }
 
 /**
@@ -132,7 +152,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       await assertThreadAccess(threadType, threadId, userId);
 
       const created = await prisma.message.create({
-        data: { threadType, threadId, authorId: userId, body },
+        data: {
+          threadType,
+          threadId,
+          authorId: userId,
+          body: bodyForStorage(threadType, body),
+        },
         include: { author: { select: { displayName: true } } },
       });
       const dto = toDTO(created);
@@ -160,7 +185,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       if (existing.deletedAt) throw new ValidationError("cannot edit a deleted message");
       const updated = await prisma.message.update({
         where: { id },
-        data: { body: parsed.data.body, editedAt: new Date() },
+        data: {
+          body: bodyForStorage(existing.threadType as ThreadType, parsed.data.body),
+          editedAt: new Date(),
+        },
         include: { author: { select: { displayName: true } } },
       });
       const dto = toDTO(updated);

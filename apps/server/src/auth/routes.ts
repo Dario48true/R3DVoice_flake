@@ -8,6 +8,7 @@ import { signSessionToken, signTwoFactorToken, verifyTwoFactorToken } from "./jw
 import { requireAuth } from "./middleware.js";
 import { AuthError, ConflictError, ValidationError } from "../errors.js";
 import { buildOtpAuthUrl, buildQrDataUrl, generateTotpSecret, verifyTotpCode } from "./totp.js";
+import { wrapAtRest, unwrapAtRest } from "../crypto-at-rest.js";
 
 const registerBodySchema = z.object({
   email: z.string().email(),
@@ -123,7 +124,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }
       const user = await prisma.user.findUnique({ where: { id: claims.userId } });
       if (!user || !user.totpSecret) throw new AuthError("invalid credentials");
-      if (!verifyTotpCode(user.totpSecret, code)) {
+      if (!verifyTotpCode(unwrapAtRest(user.totpSecret), code)) {
         throw new AuthError("invalid two-factor code");
       }
 
@@ -211,7 +212,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         throw new ConflictError("2FA already enabled — disable first to re-enroll");
       }
       const secret = generateTotpSecret();
-      await prisma.user.update({ where: { id: user.id }, data: { totpSecret: secret } });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { totpSecret: wrapAtRest(secret) },
+      });
       const otpAuthUrl = buildOtpAuthUrl(user.email, secret);
       const qrDataUrl = await buildQrDataUrl(otpAuthUrl);
       return { secret, otpAuthUrl, qrDataUrl };
@@ -226,7 +230,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       if (!parsed.success) throw new ValidationError("invalid input");
       const user = await prisma.user.findUnique({ where: { id: request.auth!.userId } });
       if (!user || !user.totpSecret) throw new AuthError("no enrollment in progress");
-      if (!verifyTotpCode(user.totpSecret, parsed.data.code)) {
+      if (!verifyTotpCode(unwrapAtRest(user.totpSecret), parsed.data.code)) {
         throw new AuthError("invalid two-factor code");
       }
       await prisma.user.update({

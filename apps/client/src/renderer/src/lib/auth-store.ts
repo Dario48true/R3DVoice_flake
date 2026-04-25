@@ -105,8 +105,14 @@ export function createAuthStore(
         await storage.saveToken(token);
         set({ status: "authenticated", token, user, error: null });
         // Trigger the backup download. User decides whether to save it; if
-        // they don't, losing this device = losing DM history.
-        downloadKeyBackup(email, kp);
+        // they don't, losing this device = losing DM history. Wrapped in a
+        // try/catch because URL/document APIs aren't available in unit tests
+        // and we don't want a missing browser API to fail the registration.
+        try {
+          downloadKeyBackup(email, kp);
+        } catch {
+          /* ignore — Settings → Account "Download key backup" is the fallback */
+        }
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "register failed";
         set({ status: "unauthenticated", error: message });
