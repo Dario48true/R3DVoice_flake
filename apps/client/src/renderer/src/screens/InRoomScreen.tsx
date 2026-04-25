@@ -23,6 +23,7 @@ import {
 import type { PreJoinSelection } from "./PreJoinScreen.js";
 import { SettingsModal } from "../components/SettingsModal.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
+import type { LinuxAudioSourceSummary } from "../../../shared/bridge-types.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
@@ -562,6 +563,175 @@ function SpeakerLayout({
         ))}
       </div>
     </div>
+  );
+}
+
+function ShareAudioControl({
+  enabled,
+  roomWrapper,
+}: {
+  enabled: boolean;
+  roomWrapper: LiveKitRoom;
+}): ReactElement {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [sources, setSources] = useState<LinuxAudioSourceSummary[]>([]);
+  const [selectedPid, setSelectedPid] = useState<string | null>(null);
+  const platform = window.redvoice?.platform();
+  const showPicker = platform === "linux"; // Phase 2 windows picker comes later
+
+  useEffect(() => {
+    if (!pickerOpen || !showPicker) return;
+    let cancelled = false;
+    void window.redvoice.listLinuxAudioSources().then((s) => {
+      if (!cancelled) setSources(s);
+    });
+    return () => { cancelled = true; };
+  }, [pickerOpen, showPicker]);
+
+  // Close picker on outside click via the existing global handler.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onMouseDown(e: globalThis.MouseEvent): void {
+      if (e.button !== 0) return;
+      setPickerOpen(false);
+    }
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [pickerOpen]);
+
+  async function pickSource(pid: string | null): Promise<void> {
+    setSelectedPid(pid);
+    setPickerOpen(false);
+    if (!enabled) return;
+    // Re-link with new scope.
+    await roomWrapper.disableScreenShareAudio();
+    await roomWrapper.enableScreenShareAudio(pid ?? undefined);
+  }
+
+  const selectedLabel = selectedPid
+    ? sources.find((s) => s.processId === selectedPid)?.appName ?? `PID ${selectedPid}`
+    : "All apps";
+
+  return (
+    <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 0 }}>
+      <ControlButton
+        icon={<I.Speaker size={20} />}
+        label={enabled ? "Stop audio" : "Share audio"}
+        active={enabled}
+        emphasis={enabled}
+        title={
+          enabled
+            ? `Source: ${selectedLabel} — click to stop`
+            : "Add system audio to your screen share"
+        }
+        onClick={() => {
+          void (enabled
+            ? roomWrapper.disableScreenShareAudio()
+            : roomWrapper.enableScreenShareAudio(selectedPid ?? undefined));
+        }}
+      />
+      {showPicker && (
+        <button
+          type="button"
+          aria-label="Pick audio source"
+          title="Pick which app's audio to share"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={() => setPickerOpen((v) => !v)}
+          style={{
+            appearance: "none",
+            border: 0,
+            background: "transparent",
+            color: enabled ? "var(--text)" : "var(--text-faint)",
+            cursor: "pointer",
+            padding: "0 4px",
+            marginLeft: -6,
+            height: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+        >
+          <I.ChevronDown size={12} />
+        </button>
+      )}
+      {pickerOpen && showPicker && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 30,
+            minWidth: 220,
+            maxHeight: 280,
+            overflowY: "auto",
+            padding: 4,
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r-md)",
+            boxShadow: "var(--shadow-2)",
+          }}
+        >
+          <SourceMenuItem
+            active={selectedPid === null}
+            onClick={() => void pickSource(null)}
+          >
+            All apps <span style={{ color: "var(--text-faint)" }}>(except RedVoice)</span>
+          </SourceMenuItem>
+          {sources.length === 0 ? (
+            <div style={{ padding: 10, color: "var(--text-faint)", fontSize: "var(--t-xs)" }}>
+              No apps producing audio right now.
+            </div>
+          ) : (
+            sources.map((s) => (
+              <SourceMenuItem
+                key={`${s.appName}-${s.processId}`}
+                active={selectedPid === s.processId}
+                onClick={() => void pickSource(s.processId)}
+              >
+                {s.appName}
+              </SourceMenuItem>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourceMenuItem({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        appearance: "none",
+        border: 0,
+        cursor: "pointer",
+        width: "100%",
+        textAlign: "left",
+        padding: "8px 10px",
+        borderRadius: "var(--r-sm)",
+        background: active ? "color-mix(in oklch, var(--accent) 20%, transparent)" : "transparent",
+        color: active ? "var(--text)" : "var(--text-mid)",
+        fontSize: "var(--t-sm)",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.background = "var(--bg-elev-3)";
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.background = "transparent";
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1383,21 +1553,9 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             onClick={() => void handleToggleScreen()}
           />
           {sharing && (
-            <ControlButton
-              icon={<I.Speaker size={20} />}
-              label={snapshot.screenShareAudioEnabled ? "Stop audio" : "Share audio"}
-              active={snapshot.screenShareAudioEnabled}
-              emphasis={snapshot.screenShareAudioEnabled}
-              title={
-                snapshot.screenShareAudioEnabled
-                  ? "Stop sharing system audio with the room"
-                  : "Add system audio to your screen share"
-              }
-              onClick={() =>
-                void (snapshot.screenShareAudioEnabled
-                  ? roomWrapper.disableScreenShareAudio()
-                  : roomWrapper.enableScreenShareAudio())
-              }
+            <ShareAudioControl
+              enabled={snapshot.screenShareAudioEnabled}
+              roomWrapper={roomWrapper}
             />
           )}
           <ControlButton

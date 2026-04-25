@@ -79,11 +79,73 @@ export interface EnableResult {
   monitorDeviceDescription: string;
 }
 
+export interface AudioSourceSummary {
+  /** node.name — stable identifier across the same app session. */
+  nodeName: string;
+  /** application.name — human-friendly app label. */
+  appName: string;
+  /** application.process.id — for tie-breaking when same-named apps run twice. */
+  processId: string;
+  /** Optional icon name (XDG), if PipeWire reported one. */
+  iconName?: string;
+}
+
+/** List audio-producing apps PipeWire knows about, with our own PID filtered out. */
+export function listLinuxAudioSources(): AudioSourceSummary[] {
+  const pb = obtainPatchBay();
+  if (!pb) return [];
+  const audioPid = getRendererAudioServicePid();
+  try {
+    const nodes = pb.list([
+      "node.name",
+      "application.name",
+      "application.process.id",
+      "application.icon-name",
+      "media.class",
+    ] as const as string[]);
+    const seen = new Set<string>();
+    const out: AudioSourceSummary[] = [];
+    for (const n of nodes) {
+      // Only output streams (apps producing sound), not mic captures.
+      if (n["media.class"] !== "Stream/Output/Audio") continue;
+      // Drop ourselves.
+      if (audioPid && n["application.process.id"] === audioPid) continue;
+      const appName = (n["application.name"] ?? n["node.name"] ?? "Unknown").trim();
+      const nodeName = n["node.name"] ?? "";
+      const processId = n["application.process.id"] ?? "";
+      // Dedupe by app + pid so e.g. Firefox doesn't appear N times for N tabs.
+      const key = `${appName}::${processId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        nodeName,
+        appName,
+        processId,
+        ...(n["application.icon-name"] ? { iconName: n["application.icon-name"] } : {}),
+      });
+    }
+    return out;
+  } catch (err) {
+    safeLog("[linux-audio] list() threw:", err);
+    return [];
+  }
+}
+
+export interface EnableOptions {
+  /**
+   * If given, capture only this specific app (by application.process.id).
+   * If omitted, capture every output stream except RedVoice itself —
+   * the existing v0.4.14 behavior.
+   */
+  includeProcessId?: string;
+}
+
 /** Idempotent. Returns null if venmic isn't available (no PipeWire / load failed). */
-export function enableLinuxAudioRouting(): EnableResult | null {
+export function enableLinuxAudioRouting(options: EnableOptions = {}): EnableResult | null {
   const pb = obtainPatchBay();
   if (!pb) return null;
-  if (linked) return { monitorDeviceDescription: "vencord-screen-share" };
+  // Re-link if we're already linked but the caller wants a different scope —
+  // PatchBay.link() replaces the existing graph wiring atomically.
 
   const audioPid = getRendererAudioServicePid();
   if (!audioPid) {
@@ -91,20 +153,21 @@ export function enableLinuxAudioRouting(): EnableResult | null {
     return null;
   }
 
-  const data: LinkData = {
-    include: [], // empty include = "everything except exclude"
-    exclude: [
-      { "application.process.id": audioPid },
-      // Don't capture from input/mic streams — only output streams from apps.
-      { "media.class": "Stream/Input/Audio" },
-    ],
-    // Only capture nodes that are actually playing to speakers (skip
-    // disconnected / phantom streams).
-    only_speakers: true,
-    // Skip hardware devices themselves (their monitors get captured via the
-    // app streams that play to them).
-    ignore_devices: true,
-  };
+  const data: LinkData = options.includeProcessId
+    ? {
+        include: [{ "application.process.id": options.includeProcessId }],
+        exclude: [{ "application.process.id": audioPid }],
+        ignore_devices: true,
+      }
+    : {
+        include: [],
+        exclude: [
+          { "application.process.id": audioPid },
+          { "media.class": "Stream/Input/Audio" },
+        ],
+        only_speakers: true,
+        ignore_devices: true,
+      };
 
   try {
     const ok = pb.link(data);
@@ -113,7 +176,10 @@ export function enableLinuxAudioRouting(): EnableResult | null {
       return null;
     }
     linked = true;
-    safeLog("[linux-audio] venmic linked — capturing all output streams except PID", audioPid);
+    safeLog(
+      "[linux-audio] venmic linked —",
+      options.includeProcessId ? `including PID ${options.includeProcessId}` : `excluding PID ${audioPid}`,
+    );
     return { monitorDeviceDescription: "vencord-screen-share" };
   } catch (err) {
     safeLog("[linux-audio] PatchBay.link() threw:", err);
@@ -130,8 +196,11 @@ export function disableLinuxAudioRouting(): void {
 }
 
 export function registerLinuxAudioRoutingHandlers(): void {
-  ipcMain.handle("linux-audio-routing:enable", () => enableLinuxAudioRouting());
+  ipcMain.handle("linux-audio-routing:enable", (_evt, options?: EnableOptions) =>
+    enableLinuxAudioRouting(options),
+  );
   ipcMain.handle("linux-audio-routing:disable", () => disableLinuxAudioRouting());
+  ipcMain.handle("linux-audio-routing:list-sources", () => listLinuxAudioSources());
 }
 
 // Best-effort cleanup so we don't leave the virtual device hanging when the

@@ -50,8 +50,9 @@ const bridge: RedVoiceBridge = {
     ipcRenderer.on("system-audio:ended", handler);
     return () => ipcRenderer.off("system-audio:ended", handler);
   },
-  enableLinuxAudioRouting: () => ipcRenderer.invoke("linux-audio-routing:enable"),
+  enableLinuxAudioRouting: (options) => ipcRenderer.invoke("linux-audio-routing:enable", options),
   disableLinuxAudioRouting: () => ipcRenderer.invoke("linux-audio-routing:disable"),
+  listLinuxAudioSources: () => ipcRenderer.invoke("linux-audio-routing:list-sources"),
 };
 
 contextBridge.exposeInMainWorld("redvoice", bridge);

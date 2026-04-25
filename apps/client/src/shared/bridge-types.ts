@@ -78,13 +78,23 @@ export interface RedVoiceBridge {
   onSystemAudioEnded(cb: () => void): () => void;
   /**
    * Linux-only: set up routing so screenshare audio capture excludes
-   * RedVoice's own playback. Returns the monitor source description to find
-   * via enumerateDevices(), or null if PulseAudio is unavailable / setup
-   * failed. Idempotent.
+   * RedVoice's own playback. Pass `includeProcessId` to capture only one
+   * specific app instead of the system-wide-minus-self default.
    */
-  enableLinuxAudioRouting(): Promise<{ monitorDeviceDescription: string } | null>;
+  enableLinuxAudioRouting(
+    options?: { includeProcessId?: string },
+  ): Promise<{ monitorDeviceDescription: string } | null>;
   /** Tear down the routing set up by enableLinuxAudioRouting. */
   disableLinuxAudioRouting(): Promise<void>;
+  /** Linux-only: list audio-producing apps for the share-audio source picker. */
+  listLinuxAudioSources(): Promise<LinuxAudioSourceSummary[]>;
+}
+
+export interface LinuxAudioSourceSummary {
+  nodeName: string;
+  appName: string;
+  processId: string;
+  iconName?: string;
 }
 
 export interface SystemAudioFormat {

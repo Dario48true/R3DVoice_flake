@@ -214,16 +214,13 @@ export class LiveKitRoom {
   /**
    * Publish a screen_share_audio track. Capture order:
    *   1. Native WASAPI filter (Windows 11+, excludes RedVoice's own playback)
-   *   2. Linux PulseAudio/PipeWire monitor source (captures full system mix
-   *      including this app's playback — same loopback caveat as the legacy
-   *      Windows path)
+   *   2. Linux PipeWire venmic device (per-app or system-mix-minus-self)
    *   3. getDisplayMedia({audio:true, video:false}) — Windows fallback
    *
-   * Returns true if a track was published, false otherwise. Tracks the
-   * extra MediaStream (Linux monitor / Windows fallback) so we can stop()
-   * them on disable.
+   * `linuxIncludeProcessId` (optional) restricts Linux capture to a single
+   * app's audio. Omit for system-wide-minus-RedVoice.
    */
-  async enableScreenShareAudio(): Promise<boolean> {
+  async enableScreenShareAudio(linuxIncludeProcessId?: string): Promise<boolean> {
     if (this.room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)) {
       return true;
     }
@@ -250,7 +247,9 @@ export class LiveKitRoom {
       let preferLabel: string | undefined;
       let routingEnabled = false;
       try {
-        const routing = await window.redvoice.enableLinuxAudioRouting();
+        const routing = await window.redvoice.enableLinuxAudioRouting(
+          linuxIncludeProcessId ? { includeProcessId: linuxIncludeProcessId } : undefined,
+        );
         if (routing) {
           preferLabel = routing.monitorDeviceDescription;
           routingEnabled = true;
