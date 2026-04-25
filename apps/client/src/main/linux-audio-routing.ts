@@ -122,36 +122,72 @@ export interface AudioSourceSummary {
   iconName?: string;
 }
 
-/** List audio-producing apps PipeWire knows about, with our own PID filtered out. */
+/** Friendly label that prefers the binary name when the app name is generic. */
+function labelForNode(n: Record<string, string>): string {
+  const app = n["application.name"]?.trim() ?? "";
+  const binary = (n["application.process.binary"] ?? "")
+    .replace(/\.(bin|exe)$/i, "")
+    .trim();
+  const node = n["node.name"]?.trim() ?? "";
+  // Electron / Mozilla apps all expose application.name === "Chromium" /
+  // "Mozilla", which is useless as a picker label. Fall back to the binary
+  // name (or node.name) so the user sees "vesktop", "discord", "obs", etc.
+  if (!app || /^(chromium|electron|mozilla|webkit)$/i.test(app)) {
+    return binary || node || app || "Unknown";
+  }
+  return app;
+}
+
+/** List audio-producing apps PipeWire knows about, with RedVoice filtered out. */
 export function listLinuxAudioSources(): AudioSourceSummary[] {
   const pb = obtainPatchBay();
   if (!pb) return [];
+
+  // Build a "is this RedVoice?" predicate using the same facet matches we
+  // hand to PatchBay.link()'s exclude. PipeWire reports audio streams under
+  // multiple sub-process PIDs (Audio Service, renderer, GPU); single-PID
+  // exclusion misses some, so the user sees their own "Chromium" entry.
+  const ourPid = String(process.pid);
   const audioPid = getRendererAudioServicePid();
+  const execName = basename(process.execPath).toLowerCase();
+  const appName = app.getName();
+  const isRedVoice = (n: Record<string, string>): boolean => {
+    const pid = n["application.process.id"];
+    if (pid === ourPid) return true;
+    if (audioPid && pid === audioPid) return true;
+    const bin = n["application.process.binary"]?.toLowerCase();
+    if (bin === execName) return true;
+    if (bin === "redvoice") return true;
+    if (n["application.name"] === "RedVoice") return true;
+    if (n["application.name"] === appName) return true;
+    return false;
+  };
+
   try {
     const nodes = pb.list([
       "node.name",
       "application.name",
       "application.process.id",
+      "application.process.binary",
       "application.icon-name",
       "media.class",
     ] as const as string[]);
     const seen = new Set<string>();
     const out: AudioSourceSummary[] = [];
     for (const n of nodes) {
-      // Only output streams (apps producing sound), not mic captures.
       if (n["media.class"] !== "Stream/Output/Audio") continue;
-      // Drop ourselves.
-      if (audioPid && n["application.process.id"] === audioPid) continue;
-      const appName = (n["application.name"] ?? n["node.name"] ?? "Unknown").trim();
+      if (isRedVoice(n)) continue;
+      const label = labelForNode(n);
       const nodeName = n["node.name"] ?? "";
       const processId = n["application.process.id"] ?? "";
-      // Dedupe by app + pid so e.g. Firefox doesn't appear N times for N tabs.
-      const key = `${appName}::${processId}`;
+      // Dedupe by friendly label + pid so the same app at one PID with
+      // multiple internal streams (e.g. WebRTC + media element) shows once.
+      const key = `${label}::${processId}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({
         nodeName,
-        appName,
+        appName: label,
         processId,
         ...(n["application.icon-name"] ? { iconName: n["application.icon-name"] } : {}),
       });
