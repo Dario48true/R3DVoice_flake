@@ -53,6 +53,7 @@ interface ParticipantView {
 }
 
 interface TileCallbacks {
+  onClick(id: string): void;
   onDoubleClick(id: string, videoEl: HTMLVideoElement | null): void;
   onContextMenu(id: string, x: number, y: number): void;
 }
@@ -314,11 +315,16 @@ function Tile({
     callbacks.onDoubleClick(tile.id, videoRef.current);
   }
 
+  function onClick(): void {
+    callbacks.onClick(tile.id);
+  }
+
   return (
     <div
+      onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
-      title="Double-click to fullscreen · right-click for volume"
+      title="Click to focus · double-click to fullscreen · right-click for volume"
       className={sharing ? "rv-scanlines" : ""}
       style={{
         position: "relative",
@@ -508,13 +514,17 @@ function GridLayout({
 function SpeakerLayout({
   people,
   sharer,
+  focusedId,
   callbacks,
 }: {
   people: ParticipantView[];
   sharer: ParticipantView | null;
+  focusedId: string | null;
   callbacks: TileCallbacks;
 }): ReactElement {
-  const focus = sharer ?? people.find((p) => p.isSpeaking) ?? people[0];
+  // User's explicit click-to-focus wins over auto-pick (sharer → speaker → first).
+  const userFocused = focusedId ? people.find((p) => p.id === focusedId) ?? null : null;
+  const focus = userFocused ?? sharer ?? people.find((p) => p.isSpeaking) ?? people[0];
   if (!focus) {
     return <div />;
   }
@@ -640,6 +650,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const [dmTarget, setDmTarget] = useState<{ id: string; name: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [layout, setLayout] = useState<LayoutMode>("auto");
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const snapshot: RoomStateSnapshot = useSyncExternalStore(
     (cb) => roomWrapper.subscribe(() => cb()),
@@ -776,6 +787,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       if (e.key === "Escape") {
         setMaximizedId(null);
         setMenu(null);
+        setFocusedId(null);
       }
     }
     function onMouseDown(e: globalThis.MouseEvent): void {
@@ -839,6 +851,11 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   }
 
   const tileCallbacks: TileCallbacks = {
+    onClick: (id) => {
+      // Single-click focuses a tile in speaker layout. Click the same tile
+      // again to clear focus and let the auto-pick (sharer/speaker) take over.
+      setFocusedId((current) => (current === id ? null : id));
+    },
     onDoubleClick: (id, videoEl) => {
       // If the tile has a <video> element and isn't already fullscreen,
       // request true OS-level fullscreen on it. Otherwise toggle the in-app
@@ -897,7 +914,14 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const menuParticipantName = menuParticipant?.name ?? "participant";
   const menuIsLocal = menuParticipant?.isLocal ?? false;
 
-  const useSpeaker = layout === "speaker" || (layout === "auto" && sharingParticipants.length > 0);
+  // Speaker layout activates when: user picked it, user click-focused a tile,
+  // or auto + someone is sharing. focusedId is dropped if its participant left.
+  const focusedTileExists = focusedId !== null && tiles.some((t) => t.id === focusedId);
+  const effectiveFocusedId = focusedTileExists ? focusedId : null;
+  const useSpeaker =
+    layout === "speaker" ||
+    effectiveFocusedId !== null ||
+    (layout === "auto" && sharingParticipants.length > 0);
   const focusSharer = sharingParticipants[0] ?? null;
 
   // Full-viewport maximized layout — no sidebar/topbar/control bar, single tile
@@ -1177,7 +1201,12 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
           }}
         >
           {useSpeaker ? (
-            <SpeakerLayout people={tiles} sharer={focusSharer} callbacks={tileCallbacks} />
+            <SpeakerLayout
+              people={tiles}
+              sharer={focusSharer}
+              focusedId={effectiveFocusedId}
+              callbacks={tileCallbacks}
+            />
           ) : (
             <GridLayout people={tiles} callbacks={tileCallbacks} />
           )}
