@@ -45,6 +45,45 @@ export interface JoinOptions {
   screenQuality?: ScreenShareQuality;
 }
 
+/**
+ * Linux: try to capture system audio by grabbing a PulseAudio/PipeWire
+ * "monitor" source via getUserMedia. PulseAudio (and PipeWire's PA emulation)
+ * exposes monitor devices for every output sink, named like
+ * "Monitor of …". Capturing a monitor gives us the full system mix.
+ *
+ * Returns null if no monitor device is available or the user denied access.
+ */
+async function captureLinuxMonitorSource(): Promise<MediaStream | null> {
+  try {
+    // Device labels are blank until the page has audio permission. RedVoice
+    // already has it from the mic publish, but request() once defensively
+    // — it's a no-op if permission is already granted.
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    if (devices.every((d) => d.label === "")) {
+      try {
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+        probe.getTracks().forEach((t) => t.stop());
+      } catch { return null; }
+      devices = await navigator.mediaDevices.enumerateDevices();
+    }
+
+    const monitors = devices.filter(
+      (d) => d.kind === "audioinput" && /monitor/i.test(d.label),
+    );
+    if (monitors.length === 0) return null;
+
+    // Prefer one tagged with "default" if PA exposes that hint; otherwise
+    // first match (typically the default sink's monitor).
+    const target = monitors.find((m) => /default/i.test(m.label)) ?? monitors[0]!;
+
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: target.deviceId } },
+    });
+  } catch {
+    return null;
+  }
+}
+
 export class LiveKitRoom {
   readonly room: Room;
   private listeners = new Set<RoomStateListener>();
@@ -53,6 +92,10 @@ export class LiveKitRoom {
   // Cached snapshot — useSyncExternalStore compares by reference, so this must
   // stay stable between LiveKit events or React will loop forever.
   private cachedSnapshot: RoomStateSnapshot;
+  // Auxiliary MediaStream backing a non-LiveKit-managed screen audio track
+  // (Linux PipeWire monitor or Windows getDisplayMedia fallback). We keep the
+  // stream so we can stop() its tracks when the user disables audio share.
+  private screenAudioAuxStream: MediaStream | null = null;
 
   constructor() {
     // dynacast disabled — it changes simulcast layer counts at runtime and
@@ -154,39 +197,58 @@ export class LiveKitRoom {
   }
 
   /**
-   * Publish a screen_share_audio track. Tries the native WASAPI filter first
-   * (Windows 11+, excludes RedVoice's own playback so other participants
-   * don't hear themselves through the share). Falls back to a fresh
-   * getDisplayMedia({audio:true,video:false}) browser dialog on platforms
-   * where the filter isn't available.
+   * Publish a screen_share_audio track. Capture order:
+   *   1. Native WASAPI filter (Windows 11+, excludes RedVoice's own playback)
+   *   2. Linux PulseAudio/PipeWire monitor source (captures full system mix
+   *      including this app's playback — same loopback caveat as the legacy
+   *      Windows path)
+   *   3. getDisplayMedia({audio:true, video:false}) — Windows fallback
    *
-   * Returns true if a track was published (filter or fallback), false if the
-   * user dismissed the fallback dialog or no audio source was available.
+   * Returns true if a track was published, false otherwise. Tracks the
+   * extra MediaStream (Linux monitor / Windows fallback) so we can stop()
+   * them on disable.
    */
   async enableScreenShareAudio(): Promise<boolean> {
     if (this.room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)) {
       return true;
     }
 
+    const platform = window.redvoice?.platform();
+
     let track: MediaStreamTrack | null = null;
+    let auxStream: MediaStream | null = null;
+
+    // 1. Native WASAPI filter
     try {
       const stream = await startSystemAudioStream();
       track = stream?.getAudioTracks()[0] ?? null;
     } catch { /* */ }
-
     if (track) {
       // eslint-disable-next-line no-console
       console.log("[screenshare] system audio filtered via native helper (your voice excluded)");
-    } else {
+    }
+
+    // 2. Linux PulseAudio/PipeWire monitor source
+    if (!track && platform === "linux") {
+      auxStream = await captureLinuxMonitorSource();
+      track = auxStream?.getAudioTracks()[0] ?? null;
+      if (track) {
+        // eslint-disable-next-line no-console
+        console.log("[screenshare] linux monitor source captured (system mix; use headphones to avoid echo)");
+      }
+    }
+
+    // 3. Windows fallback dialog
+    if (!track) {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({
           audio: true,
           video: false,
         } as DisplayMediaStreamOptions);
         track = stream.getAudioTracks()[0] ?? null;
-        // Drop any incidental video track the OS picker forced on us.
         stream.getVideoTracks().forEach((t) => t.stop());
         if (track) {
+          auxStream = stream;
           // eslint-disable-next-line no-console
           console.log("[screenshare] system audio NOT filtered — others may hear themselves; use headphones");
         }
@@ -197,6 +259,7 @@ export class LiveKitRoom {
 
     if (!track) return false;
 
+    this.screenAudioAuxStream = auxStream;
     await this.room.localParticipant.publishTrack(track, {
       source: Track.Source.ScreenShareAudio,
     });
@@ -204,11 +267,15 @@ export class LiveKitRoom {
     return true;
   }
 
-  /** Unpublish the active screen_share_audio track and stop the helper. */
+  /** Unpublish the active screen_share_audio track and release the source. */
   async disableScreenShareAudio(): Promise<void> {
     const pub = this.room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
     if (pub?.track) {
       try { await this.room.localParticipant.unpublishTrack(pub.track); } catch { /* */ }
+    }
+    if (this.screenAudioAuxStream) {
+      this.screenAudioAuxStream.getTracks().forEach((t) => t.stop());
+      this.screenAudioAuxStream = null;
     }
     await stopSystemAudioStream();
     this.emit();
