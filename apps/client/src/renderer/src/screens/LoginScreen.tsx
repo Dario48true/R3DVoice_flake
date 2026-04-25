@@ -3,6 +3,7 @@ import { useAuthStore } from "../lib/auth-context.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import { Field, Spinner, CrosshairCorner } from "../components/Primitives.js";
 import { I } from "../components/Icons.js";
+import { PublicServersModal } from "../components/PublicServersModal.js";
 
 type Mode = "login" | "register";
 
@@ -24,6 +25,7 @@ export function LoginScreen(): ReactElement {
   // Debounced server health probe — validates the response body so ISP
   // NXDOMAIN redirects or captive portals don't show up as "reachable".
   const [probe, setProbe] = useState<"idle" | "checking" | "ok" | "down">("idle");
+  const [pickerOpen, setPickerOpen] = useState(false);
   useEffect(() => {
     if (!serverUrl) {
       setProbe("idle");
@@ -212,7 +214,28 @@ export function LoginScreen(): ReactElement {
             </span>
           </div>
 
-          <Field label="Server" hint="Self-hosted instance">
+          <Field
+            label="Server"
+            hint="Self-hosted instance"
+            right={
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                style={{
+                  appearance: "none",
+                  background: "transparent",
+                  border: 0,
+                  padding: 0,
+                  color: "var(--text-dim)",
+                  fontSize: "var(--t-xs)",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Browse public servers
+              </button>
+            }
+          >
             <div style={{ position: "relative" }}>
               <input
                 className="rv-input"
@@ -347,6 +370,14 @@ export function LoginScreen(): ReactElement {
           </div>
         </form>
       </main>
+      <PublicServersModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(url) => {
+          setServerUrl(url);
+          prefsActions().setServerUrl(url);
+        }}
+      />
     </div>
   );
 }
