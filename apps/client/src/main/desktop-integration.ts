@@ -1,6 +1,28 @@
-import { writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+
+/**
+ * electron-builder stores the icon inside the AppImage at
+ * `usr/share/icons/hicolor/<size>/apps/<sanitized-package-name>.png`.
+ * For scoped names like @redvoice/client it becomes `@redvoiceclient.png`.
+ * Find whatever's there without hardcoding the sanitized name.
+ */
+function findAppIcon(appDir: string): string | null {
+  const iconRoot = join(appDir, "usr/share/icons/hicolor");
+  if (!existsSync(iconRoot)) return null;
+  for (const size of ["512x512", "256x256", "128x128", "64x64"]) {
+    const appsDir = join(iconRoot, size, "apps");
+    if (!existsSync(appsDir)) continue;
+    try {
+      const pngs = readdirSync(appsDir).filter((f) => f.endsWith(".png"));
+      if (pngs[0]) return join(appsDir, pngs[0]);
+    } catch {
+      // ignore and try next size
+    }
+  }
+  return null;
+}
 
 /**
  * On Linux AppImage builds, writes a `.desktop` file on every launch pointing
@@ -16,15 +38,19 @@ export function writeDesktopEntry(): void {
 
   const home = homedir();
 
-  // Copy icon from AppImage's temporary mount to a persistent user icon dir.
-  // process.resourcesPath points inside the AppImage squashfs; copyFileSync
-  // reads through the mount and writes to the persistent location.
+  // Copy icon from the AppImage's mounted squashfs ($APPDIR) to a persistent
+  // user icon dir. electron-builder stores the icon at a path derived from the
+  // package name; findAppIcon locates whichever PNG is there.
   try {
-    const iconDir = join(home, ".local/share/icons/hicolor/512x512/apps");
-    mkdirSync(iconDir, { recursive: true });
-    const sourceIcon = join(process.resourcesPath, "icon.png");
-    const targetIcon = join(iconDir, "redvoice.png");
-    copyFileSync(sourceIcon, targetIcon);
+    const appDir = process.env["APPDIR"];
+    if (appDir) {
+      const sourceIcon = findAppIcon(appDir);
+      if (sourceIcon) {
+        const iconDir = join(home, ".local/share/icons/hicolor/512x512/apps");
+        mkdirSync(iconDir, { recursive: true });
+        copyFileSync(sourceIcon, join(iconDir, "redvoice.png"));
+      }
+    }
   } catch {
     // Icon is cosmetic — proceed without it.
   }
