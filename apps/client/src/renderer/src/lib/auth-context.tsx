@@ -3,13 +3,20 @@ import type { StoreApi } from "zustand/vanilla";
 import { ApiClient } from "./api.js";
 import { createAuthStore, type AuthState } from "./auth-store.js";
 import { bridgeStorageAdapter } from "./bridge-adapter.js";
+import { prefsActions } from "./prefs-singleton.js";
 
 const Ctx = createContext<StoreApi<AuthState> | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): ReactElement {
   const store = useMemo(() => {
-    const api = new ApiClient("http://localhost:3000");
-    return createAuthStore(api, bridgeStorageAdapter);
+    // Use the persisted server URL from prefs so hydrate() hits the right
+    // /me endpoint on first paint. Falls back to the auth-store's default
+    // (https://voice.r3dwolfie.com) if prefs haven't loaded yet.
+    const persistedUrl = prefsActions().serverUrl;
+    const api = new ApiClient(persistedUrl);
+    const s = createAuthStore(api, bridgeStorageAdapter);
+    s.getState().setServerUrl(persistedUrl);
+    return s;
   }, []);
 
   useEffect(() => {

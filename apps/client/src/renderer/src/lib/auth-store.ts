@@ -31,7 +31,7 @@ export interface AuthState {
   setServerUrl(url: string): void;
 }
 
-const DEFAULT_SERVER_URL = "http://localhost:3000";
+const DEFAULT_SERVER_URL = "https://voice.r3dwolfie.com";
 
 export function createAuthStore(
   api: ApiClient,
