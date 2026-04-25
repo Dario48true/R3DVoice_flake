@@ -153,15 +153,6 @@ export function LoginScreen(): ReactElement {
           <p style={{ color: "var(--text-mid)", maxWidth: "32ch", fontSize: "var(--t-md)", lineHeight: 1.55 }}>
             Open-source voice + screenshare for friends, raid nights, and the people you actually want to hear.
           </p>
-          <div style={{ display: "flex", gap: "var(--s-3)", marginTop: "var(--s-7)" }}>
-            <span className="rv-badge" data-tone="live">
-              <span className="pip" /> 4 servers up
-            </span>
-            <span className="rv-badge">
-              <span className="rv-mono">62 ms</span>
-            </span>
-            <span className="rv-badge">e2e srtp</span>
-          </div>
         </div>
 
         <div

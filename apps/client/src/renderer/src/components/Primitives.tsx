@@ -1,30 +1,31 @@
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 
+// Vite-injected at build time from apps/client/package.json.
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
+
 export function WindowChrome({
   title,
-  version = "v0.1.5",
-  serverLabel = "localhost:3000",
+  version = `v${APP_VERSION}`,
+  serverLabel,
   children,
 }: {
   title: string;
   version?: string;
-  serverLabel?: string;
+  /** Optional server URL host (e.g. "voice.r3dwolfie.com"). Hidden if absent. */
+  serverLabel?: string | undefined;
   children: ReactNode;
 }): ReactElement {
   return (
     <div className="rv-window">
       <div className="rv-titlebar">
         <div className="rv-titlebar-left">
-          <div className="rv-traffic">
-            <span className="dot red" />
-            <span className="dot yellow" />
-            <span className="dot green" />
-          </div>
           <span className="rv-titlebar-title">{title}</span>
         </div>
         <div className="rv-titlebar-right">
           <span className="rv-titlebar-title" style={{ opacity: 0.6 }}>
-            {version} · {serverLabel}
+            {version}
+            {serverLabel ? ` · ${serverLabel}` : ""}
           </span>
         </div>
       </div>
