@@ -7,6 +7,7 @@ import { roomRoutes } from "./rooms/routes.js";
 import { chatRoutes } from "./chat/routes.js";
 import { chatWsRoutes } from "./chat/ws.js";
 import { friendsRoutes } from "./friends/routes.js";
+import { landingRoutes } from "./landing.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -29,6 +30,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   registerErrorHandler(app);
 
   app.get("/health", async () => ({ status: "ok" }));
+  await app.register(landingRoutes);
   await app.register(authRoutes);
   await app.register(roomRoutes);
   await app.register(chatWsRoutes);
