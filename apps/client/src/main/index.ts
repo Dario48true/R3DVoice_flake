@@ -296,7 +296,20 @@ app.whenReady().then(async () => {
     (process.env["XDG_SESSION_TYPE"] === "wayland" ||
       Boolean(process.env["WAYLAND_DISPLAY"]));
 
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    // Audio-only request (the in-room "Share audio" toggle on Windows when
+    // the native filter isn't available). Skip the screen picker — the user
+    // doesn't want to pick a window, they want loopback audio. macOS/Linux
+    // can't deliver system audio without a video source, so we return empty.
+    if (request.audioRequested && !request.videoRequested) {
+      if (process.platform === "win32") {
+        callback({ audio: "loopback" });
+      } else {
+        callback({});
+      }
+      return;
+    }
+
     if (isWayland) {
       // Portal prompts the user; getSources returns just the chosen source.
       const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
