@@ -35,7 +35,7 @@ interface ParticipantView {
 }
 
 interface TileCallbacks {
-  onDoubleClick(id: string): void;
+  onDoubleClick(id: string, videoEl: HTMLVideoElement | null): void;
   onContextMenu(id: string, x: number, y: number): void;
 }
 
@@ -74,22 +74,27 @@ function ParticipantTile({
   }, [p.screenTrack]);
 
   function onContextMenu(e: MouseEvent): void {
-    if (p.isLocal) return;
     e.preventDefault();
+    e.stopPropagation();
     callbacks.onContextMenu(p.id, e.clientX, e.clientY);
+  }
+
+  function onDoubleClick(): void {
+    callbacks.onDoubleClick(p.id, videoRef.current);
   }
 
   return (
     <div
-      onDoubleClick={() => callbacks.onDoubleClick(p.id)}
+      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       style={{
         background: "var(--bg-elev)",
         border: `2px solid ${p.isSpeaking ? "var(--accent)" : "var(--border)"}`,
-        borderRadius: 8,
+        borderRadius: maximized ? 0 : 8,
         padding: p.screenTrack ? 0 : 16,
         minHeight: maximized ? 0 : 180,
         height: maximized ? "100%" : undefined,
+        width: maximized ? "100%" : undefined,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -100,7 +105,7 @@ function ParticipantTile({
         position: "relative",
         cursor: "pointer",
       }}
-      title="Double-click to maximize · right-click for volume"
+      title="Double-click to fullscreen · right-click for volume"
     >
       {p.screenTrack ? (
         <>
@@ -182,7 +187,8 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const roomWrapper = useMemo(() => new LiveKitRoom(), []);
   const [conn, setConn] = useState<ConnectionState>({ phase: "connecting" });
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
-  const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const [voiceVolumes, setVoiceVolumes] = useState<Record<string, number>>({});
+  const [screenVolumes, setScreenVolumes] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<VolumeMenu | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -202,8 +208,6 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         api.setToken(token);
         const { token: lkToken, url } = await api.mintLiveKitToken(props.roomId);
         if (cancelled) return;
-        // Plan 4 Task 5 hypothesis #1: Plan 3's `dynacast: false` should've
-        // eliminated the codec collision. Publish mic audio again.
         const micStream = props.selection.micDeviceId
           ? await openMicStream(props.selection.micDeviceId)
           : undefined;
@@ -277,7 +281,9 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     return cleanup;
   }, [roomWrapper]);
 
-  // ESC closes maximize / menu; click-outside closes menu.
+  // ESC closes maximize / menu.
+  // Left-click (button 0) outside the menu closes it — ignore right-clicks
+  // and middle-clicks so the menu doesn't close the moment it opens.
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if (e.key === "Escape") {
@@ -285,15 +291,28 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         setMenu(null);
       }
     }
-    function onClick(): void {
+    function onMouseDown(e: globalThis.MouseEvent): void {
+      if (e.button !== 0) return;
       setMenu(null);
     }
     window.addEventListener("keydown", onKey);
-    window.addEventListener("click", onClick);
+    window.addEventListener("mousedown", onMouseDown);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("click", onClick);
+      window.removeEventListener("mousedown", onMouseDown);
     };
+  }, []);
+
+  // Sync maximizedId with the browser fullscreen state: if user presses ESC or
+  // exits OS fullscreen by other means, clear our maximized state too.
+  useEffect(() => {
+    function onFsChange(): void {
+      if (!document.fullscreenElement) {
+        setMaximizedId(null);
+      }
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
   async function handleLeave(): Promise<void> {
@@ -306,16 +325,38 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
     await roomWrapper.setScreenShare(!isSharing);
   }
 
-  function setParticipantVolume(id: string, volume: number): void {
-    setVolumes((prev) => ({ ...prev, [id]: volume }));
+  function setVoiceVolume(id: string, volume: number): void {
+    setVoiceVolumes((prev) => ({ ...prev, [id]: volume }));
     const participant = snapshot.remotes.find((r) => r.identity === id);
     if (participant) {
-      participant.setVolume(volume);
+      participant.setVolume(volume, Track.Source.Microphone);
+    }
+  }
+
+  function setScreenVolume(id: string, volume: number): void {
+    setScreenVolumes((prev) => ({ ...prev, [id]: volume }));
+    const participant = snapshot.remotes.find((r) => r.identity === id);
+    if (participant) {
+      participant.setVolume(volume, Track.Source.ScreenShareAudio);
     }
   }
 
   const tileCallbacks: TileCallbacks = {
-    onDoubleClick: (id) => {
+    onDoubleClick: (id, videoEl) => {
+      // If the tile has a <video> element and isn't already fullscreen,
+      // request true OS-level fullscreen on it. Otherwise toggle the in-app
+      // maximize (useful for avatar-only tiles).
+      if (videoEl && !document.fullscreenElement) {
+        setMaximizedId(id);
+        void videoEl.requestFullscreen().catch(() => {
+          // Fallback to in-app maximize if OS fullscreen refused
+        });
+        return;
+      }
+      if (document.fullscreenElement) {
+        void document.exitFullscreen();
+        return;
+      }
       setMaximizedId((current) => (current === id ? null : id));
     },
     onContextMenu: (id, x, y) => {
@@ -347,9 +388,50 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const muted = !(snapshot.local?.isMicrophoneEnabled ?? true);
   const sharingParticipants = tiles.filter((t) => t.screenTrack !== null);
   const maximizedTile = maximizedId ? tiles.find((t) => t.id === maximizedId) : null;
-  const menuParticipantName = menu
-    ? (tiles.find((t) => t.id === menu.participantId)?.name ?? "participant")
-    : "";
+  const menuParticipant = menu ? tiles.find((t) => t.id === menu.participantId) : null;
+  const menuParticipantName = menuParticipant?.name ?? "participant";
+  const menuIsLocal = menuParticipant?.isLocal ?? false;
+
+  // Full-viewport maximized layout — no sidebar/topbar/control bar, single tile
+  // fills the whole app window. OS fullscreen (requestFullscreen) is preferred
+  // when the tile has a video; this layout is the fallback for avatar tiles or
+  // when OS fullscreen is unavailable.
+  if (maximizedTile && !document.fullscreenElement) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "black",
+          display: "flex",
+          flexDirection: "column",
+          zIndex: 500,
+        }}
+      >
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ParticipantTile p={maximizedTile} maximized callbacks={tileCallbacks} />
+        </div>
+        <button
+          onClick={() => setMaximizedId(null)}
+          style={{
+            position: "absolute",
+            top: 16,
+            right: 16,
+            background: "rgba(0,0,0,0.7)",
+            border: "1px solid var(--border)",
+            color: "white",
+            borderRadius: 6,
+            padding: "6px 14px",
+            cursor: "pointer",
+            font: "inherit",
+            zIndex: 501,
+          }}
+        >
+          ✕ Exit (ESC)
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -409,26 +491,17 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
         </aside>
         <div style={{ padding: 24, flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
           {conn.phase === "error" && <div className="error">{conn.message}</div>}
-          {maximizedTile ? (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <ParticipantTile p={maximizedTile} maximized callbacks={tileCallbacks} />
-              <div style={{ color: "var(--text-dim)", marginTop: 8, fontSize: 12 }}>
-                Double-click again or press ESC to exit fullscreen
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-                gap: 12,
-              }}
-            >
-              {tiles.map((p) => (
-                <ParticipantTile key={p.id} p={p} maximized={false} callbacks={tileCallbacks} />
-              ))}
-            </div>
-          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {tiles.map((p) => (
+              <ParticipantTile key={p.id} p={p} maximized={false} callbacks={tileCallbacks} />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -465,6 +538,7 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
       {menu && (
         <div
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           style={{
             position: "fixed",
             left: menu.x,
@@ -473,31 +547,67 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             border: "1px solid var(--border)",
             borderRadius: 6,
             padding: 12,
-            minWidth: 220,
+            minWidth: 240,
             zIndex: 1000,
             boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
           }}
         >
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
-            Volume — {menuParticipantName}
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 10 }}>
+            {menuParticipantName}{menuIsLocal && " (you)"}
           </div>
-          <input
-            type="range"
-            min={0}
-            max={2}
-            step={0.05}
-            value={volumes[menu.participantId] ?? 1}
-            onChange={(e) => setParticipantVolume(menu.participantId, Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
-            {Math.round((volumes[menu.participantId] ?? 1) * 100)}%
-          </div>
+
+          {menuIsLocal ? (
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+              You can't adjust your own volume. Right-click someone else's tile
+              to change their voice or screen audio level.
+            </div>
+          ) : (
+            <>
+              <VolumeRow
+                label="Voice"
+                value={voiceVolumes[menu.participantId] ?? 1}
+                onChange={(v) => setVoiceVolume(menu.participantId, v)}
+              />
+              <VolumeRow
+                label="Screen audio"
+                value={screenVolumes[menu.participantId] ?? 1}
+                onChange={(v) => setScreenVolume(menu.participantId, v)}
+              />
+            </>
+          )}
         </div>
       )}
 
       <div ref={audioMountRef} style={{ display: "none" }} aria-hidden="true" />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+    </div>
+  );
+}
+
+function VolumeRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}): ReactElement {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+        <span>{label}</span>
+        <span>{Math.round(value * 100)}%</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={2}
+        step={0.05}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: "100%" }}
+      />
     </div>
   );
 }
