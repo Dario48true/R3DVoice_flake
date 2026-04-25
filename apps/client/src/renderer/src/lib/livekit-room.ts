@@ -515,35 +515,66 @@ export class LiveKitRoom {
       );
       const sender = (screenPub?.track as unknown as { sender?: RTCRtpSender } | undefined)?.sender;
       if (!sender) return;
-      const params = sender.getParameters();
-      params.degradationPreference = "maintain-framerate";
-      // Only downscale if the source is high-res. If we don't know the
-      // dims (toggle path with no quality hint), default to scaling — most
-      // modern monitors are ≥1080p.
+
       const w = opts.sourceWidth ?? 1920;
       const h = opts.sourceHeight ?? 1080;
       const shouldScaleDown = w >= 1920 || h >= 1080;
-      for (const enc of params.encodings ?? []) {
-        enc.priority = "high";
-        enc.networkPriority = "high";
-        if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
-      }
-      void sender.setParameters(params).then(() => {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[screenshare] sender params applied — ` +
-            `deg=${params.degradationPreference} ` +
-            `encPriority=${params.encodings?.[0]?.priority} ` +
-            `netPriority=${params.encodings?.[0]?.networkPriority} ` +
-            `scaleDownBy=${params.encodings?.[0]?.scaleResolutionDownBy ?? 1}`,
-        );
-      }).catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.warn("[screenshare] sender.setParameters rejected:", err);
-      });
 
-      // Periodically read params back — confirms whether LiveKit or the
-      // platform encoder is silently reverting our overrides.
+      // setParameters has strict rules: the params object must come from a
+      // fresh getParameters call (transactionId must round-trip with no
+      // async gap), and Chromium rejects the *whole* call if even one
+      // field is "unimplemented". v0.5.9 hit
+      //   "Attempted to set an unimplemented parameter of RtpParameters"
+      // because RTCRtpEncodingParameters.priority is the legacy name that
+      // Chromium dropped — only networkPriority is accepted. Removing
+      // priority and going through tiered fallbacks so we land *some*
+      // override even on stricter Chromium builds.
+      const tryApply = async (
+        mutate: (p: RTCRtpSendParameters) => void,
+        label: string,
+      ): Promise<boolean> => {
+        try {
+          const p = sender.getParameters();
+          mutate(p);
+          await sender.setParameters(p);
+          // eslint-disable-next-line no-console
+          console.log(`[screenshare] override applied (${label})`);
+          return true;
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[screenshare] override "${label}" rejected:`, err);
+          return false;
+        }
+      };
+
+      void (async (): Promise<void> => {
+        // 1. Full override (degradation + scale + networkPriority)
+        if (await tryApply((p) => {
+          p.degradationPreference = "maintain-framerate";
+          for (const enc of p.encodings ?? []) {
+            enc.networkPriority = "high";
+            if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
+          }
+        }, "full")) return;
+
+        // 2. Drop networkPriority (sometimes flagged as experimental)
+        if (await tryApply((p) => {
+          p.degradationPreference = "maintain-framerate";
+          for (const enc of p.encodings ?? []) {
+            if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
+          }
+        }, "no-network-priority")) return;
+
+        // 3. Last-resort: just scale-down — encoder will work less hard
+        await tryApply((p) => {
+          for (const enc of p.encodings ?? []) {
+            if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
+          }
+        }, "scale-only");
+      })();
+
+      // Verify what actually stuck — cur values reveal whether the override
+      // landed or got reverted by LiveKit / the encoder.
       const verifyHandle = setInterval(() => {
         try {
           const cur = sender.getParameters();
@@ -551,6 +582,7 @@ export class LiveKitRoom {
           console.log(
             `[screenshare] params check — deg=${cur.degradationPreference} ` +
               `enc[0].scaleDownBy=${cur.encodings?.[0]?.scaleResolutionDownBy ?? 1} ` +
+              `enc[0].netPriority=${cur.encodings?.[0]?.networkPriority ?? "?"} ` +
               `enc[0].active=${cur.encodings?.[0]?.active ?? true}`,
           );
         } catch { /* */ }
