@@ -5,6 +5,9 @@ import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { HandlePickGate } from "./components/HandlePickGate.js";
 import { prefsActions } from "./lib/prefs-singleton.js";
 import { WindowChrome, Spinner } from "./components/Primitives.js";
+import { LeftIconColumn, type TopPage } from "./components/LeftIconColumn.js";
+import { DmsScreen } from "./screens/DmsScreen.js";
+import { SettingsModal } from "./components/SettingsModal.js";
 
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
@@ -18,6 +21,8 @@ function Router(): ReactElement {
       return null;
     }
   });
+  const [topPage, setTopPage] = useState<TopPage>("lobby");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Listen for invite deep links from the main process.
   useEffect(() => {
@@ -48,20 +53,34 @@ function Router(): ReactElement {
       return <HandlePickGate />;
     }
     return (
-      <LobbyScreen
-        pendingInviteCode={pendingInviteCode}
-        onInviteCodeConsumed={() => {
-          setPendingInviteCode(null);
-          try {
-            const u = new URL(window.location.href);
-            u.searchParams.delete("invite");
-            window.history.replaceState({}, "", u.toString());
-          } catch {
-            // ignore
-          }
-        }}
-        onInviteCode={(code) => setPendingInviteCode(code)}
-      />
+      <div style={{ display: "flex", height: "100%" }}>
+        <LeftIconColumn
+          active={topPage}
+          onNavigate={setTopPage}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {topPage === "lobby" ? (
+            <LobbyScreen
+              pendingInviteCode={pendingInviteCode}
+              onInviteCodeConsumed={() => {
+                setPendingInviteCode(null);
+                try {
+                  const u = new URL(window.location.href);
+                  u.searchParams.delete("invite");
+                  window.history.replaceState({}, "", u.toString());
+                } catch {
+                  // ignore
+                }
+              }}
+              onInviteCode={(code) => setPendingInviteCode(code)}
+            />
+          ) : (
+            <DmsScreen />
+          )}
+        </div>
+        {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      </div>
     );
   }
   return <LoginScreen />;
