@@ -124,6 +124,12 @@ export interface ChatSendResponse {
 export interface DmThreadEntry {
   threadId: string;
   lastMessage: ChatMessageDTO;
+  /** Identity of the OTHER participant (not the caller). */
+  otherParticipant: {
+    id: string;
+    handle: string | null;
+    displayName: string;
+  };
 }
 
 export interface DmThreadsResponse {

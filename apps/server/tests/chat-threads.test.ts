@@ -55,3 +55,37 @@ describe("dmOtherParticipant", () => {
     expect(dmOtherParticipant(tid, C)).toBeNull();
   });
 });
+
+import { beforeEach } from "vitest";
+import { buildApp } from "./helpers/app";
+import { resetDb, registerUser, authHeader, setHandle } from "./helpers/fixtures";
+import { prisma } from "../src/db";
+
+describe("GET /chat/dm-threads", () => {
+  beforeEach(() => resetDb());
+
+  it("returns the other participant's identity, not the caller's", async () => {
+    const app = await buildApp();
+    const a = await registerUser(app, { email: "a@x.com", displayName: "Alice" });
+    const b = await registerUser(app, { email: "b@x.com", displayName: "Bob" });
+    await setHandle(app, a.token, "alice");
+    await setHandle(app, b.token, "bob");
+
+    const threadId = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
+    await prisma.message.create({
+      data: { threadType: "dm", threadId, authorId: a.id, body: "hello" },
+    });
+
+    const res = await app.inject({
+      method: "GET", url: "/chat/dm-threads", headers: authHeader(a.token),
+    });
+    expect(res.statusCode).toBe(200);
+    const { threads } = res.json();
+    expect(threads).toHaveLength(1);
+    expect(threads[0].otherParticipant).toMatchObject({
+      id: b.id,
+      handle: "bob",
+      displayName: "Bob",
+    });
+  });
+});

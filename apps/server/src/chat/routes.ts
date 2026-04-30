@@ -249,10 +249,33 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         if (seen.has(m.threadId)) continue;
         seen.set(m.threadId, toDTO(m));
       }
-      const threads = Array.from(seen.entries()).map(([threadId, lastMessage]) => ({
-        threadId,
-        lastMessage,
-      }));
+
+      // Resolve the OTHER half of each canonical-pair threadId in a single batch.
+      const otherIds = new Set<string>();
+      for (const threadId of seen.keys()) {
+        const [a, b] = threadId.split(":");
+        otherIds.add(a === userId ? b! : a!);
+      }
+      const others = await prisma.user.findMany({
+        where: { id: { in: [...otherIds] } },
+        select: { id: true, handle: true, displayName: true },
+      });
+      const otherById = new Map(others.map((u) => [u.id, u]));
+
+      const threads = Array.from(seen.entries()).map(([threadId, lastMessage]) => {
+        const [a, b] = threadId.split(":");
+        const otherId = a === userId ? b! : a!;
+        const other = otherById.get(otherId);
+        return {
+          threadId,
+          lastMessage,
+          otherParticipant: {
+            id: otherId,
+            handle: other?.handle ?? null,
+            displayName: other?.displayName ?? "(unknown)",
+          },
+        };
+      });
       return { threads };
     },
   );
