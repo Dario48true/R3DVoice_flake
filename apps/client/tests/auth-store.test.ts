@@ -57,7 +57,7 @@ describe("auth store", () => {
     await store.getState().login("a@b.com", "wrong-password-01");
 
     expect(store.getState().status).toBe("unauthenticated");
-    expect(store.getState().error).toBe("invalid credentials");
+    expect(store.getState().error).toBe("Incorrect email or password");
     expect(store.getState().token).toBeNull();
   });
 

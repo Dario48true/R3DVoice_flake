@@ -212,12 +212,19 @@ export class ChatTransport {
       }
     });
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (ev) => {
       if (this.heartbeatTimer != null) {
         window.clearInterval(this.heartbeatTimer);
         this.heartbeatTimer = null;
       }
       this.ws = null;
+      // 4401 = auth failure (server rejected our subprotocol token). Reconnect
+      // loops would spin forever on a stale token — bail and let the auth flow
+      // (re-login, re-hydrate) re-establish the singleton via ensureTransport.
+      if (ev.code === 4401) {
+        this.closed = true;
+        return;
+      }
       if (!this.closed) this.scheduleReconnect();
     });
 

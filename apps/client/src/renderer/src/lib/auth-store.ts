@@ -60,7 +60,16 @@ export function createAuthStore(
         await storage.saveToken(token);
         set({ status: "authenticated", token, user, error: null, twoFactorToken: null });
       } catch (err) {
-        const message = err instanceof ApiError ? err.message : "login failed";
+        // For 401 (bad creds), don't leak the server's specific phrasing —
+        // a clear "incorrect email or password" beats "invalid credentials"
+        // for end-user clarity. For other errors (5xx, network), surface
+        // the actual message so the user knows what went wrong.
+        const message =
+          err instanceof ApiError && err.status === 401
+            ? "Incorrect email or password"
+            : err instanceof ApiError
+              ? err.message
+              : "Incorrect email or password";
         set({ status: "unauthenticated", error: message });
       }
     },
@@ -116,7 +125,7 @@ export function createAuthStore(
           /* ignore — Settings → Account "Download key backup" is the fallback */
         }
       } catch (err) {
-        const message = err instanceof ApiError ? err.message : "register failed";
+        const message = err instanceof ApiError ? err.message : "Couldn't create account — please try again";
         set({ status: "unauthenticated", error: message });
       }
     },
