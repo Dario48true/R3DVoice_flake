@@ -21,6 +21,7 @@ import type {
   ChatMessageDTO,
   FriendsListResponse,
   FriendRequestResponse,
+  InviteDTO,
 } from "@redvoice/shared";
 
 export class ApiError extends Error {
@@ -218,8 +219,8 @@ export class ApiClient {
     return this.request("POST", "/invites", input);
   }
 
-  listMyInvites(): Promise<unknown> {
-    return this.request("GET", "/invites");
+  listMyInvites(): Promise<{ invites: InviteDTO[] }> {
+    return this.request("GET", "/invites") as Promise<{ invites: InviteDTO[] }>;
   }
 
   async revokeInvite(id: string): Promise<void> {

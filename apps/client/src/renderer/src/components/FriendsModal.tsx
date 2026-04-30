@@ -5,6 +5,7 @@ import { useAuthStore } from "../lib/auth-context.js";
 import { Modal } from "./Modal.js";
 import { I } from "./Icons.js";
 import { InviteCreateModal } from "./InviteCreateModal.js";
+import { MyInvitesList } from "./MyInvitesList.js";
 
 interface Props {
   open: boolean;
@@ -296,6 +297,11 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
             )}
           </Section>
         )}
+
+        <section style={{ marginTop: "var(--s-6)" }}>
+          <h3 style={{ margin: "0 0 var(--s-3)" }}>My invites</h3>
+          <MyInvitesList />
+        </section>
       </div>
     </Modal>
   );
