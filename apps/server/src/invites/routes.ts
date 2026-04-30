@@ -7,6 +7,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { ForbiddenError, NotFoundError, ValidationError } from "../errors.js";
 import { generateInviteCode } from "./code.js";
 import { renderInvitePreview, renderInviteNotFound } from "./preview-html.js";
+import { sendToUser } from "../chat/ws-state.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -189,7 +190,7 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
       if (!parsed.success) throw new ValidationError("invalid code");
       const userId = request.auth!.userId;
 
-      return await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx) => {
         const inv = await tx.invite.findUnique({ where: { code: parsed.data.code } });
         if (!inv) throw new NotFoundError("invite not found");
         if (inv.revokedAt) throw new ValidationError("invite revoked", "INVITE_REVOKED", 410);
@@ -258,6 +259,26 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
         }
         return { kind: "friend" as const, redirectTo: "/dms" };
       });
+
+      // Fire invite.redeemed to the invite creator after the transaction.
+      const redeemer = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, handle: true, displayName: true },
+      });
+      const inviteAfter = await prisma.invite.findUnique({
+        where: { code: parsed.data.code },
+        select: { creatorId: true, code: true, kind: true, targetRoomId: true },
+      });
+      if (redeemer && inviteAfter) {
+        sendToUser(inviteAfter.creatorId, {
+          type: "invite.redeemed",
+          code: inviteAfter.code,
+          by: { id: redeemer.id, handle: redeemer.handle ?? null, displayName: redeemer.displayName },
+          kind: inviteAfter.kind as "room" | "friend",
+          targetRoomId: inviteAfter.targetRoomId,
+        });
+      }
+      return result;
     },
   );
 

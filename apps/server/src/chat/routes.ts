@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { AuthError, ValidationError, NotFoundError } from "../errors.js";
 import { isDmParticipant, isThreadType, type ThreadType } from "./threads.js";
-import { broadcastToThread } from "./ws-state.js";
+import { broadcastToThread, sendToUser } from "./ws-state.js";
 import { wrapAtRest, unwrapAtRest } from "../crypto-at-rest.js";
 
 const sendBodySchema = z.object({
@@ -206,6 +206,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       });
       const dto = toDTO(created);
       broadcastToThread(threadType, threadId, { type: "message", message: dto });
+      for (const mid of mentionedUserIds) {
+        if (mid === userId) continue; // don't notify self
+        sendToUser(mid, { type: "chat.mention", message: dto });
+      }
       reply.status(201).send({ message: dto });
     },
   );

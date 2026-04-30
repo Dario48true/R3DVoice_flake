@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { AuthError, ConflictError, NotFoundError, ValidationError } from "../errors.js";
-import { isUserOnline } from "../chat/ws-state.js";
+import { isUserOnline, sendToUser } from "../chat/ws-state.js";
 import { userHandleSchema } from "@redvoice/shared";
 
 const sendBodySchema = z.object({ email: z.string().email() });
@@ -131,6 +131,17 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
         }
         throw err;
       }
+      // Fetch requester identity for the WS payload.
+      const requester = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, handle: true, displayName: true },
+      });
+      if (requester) {
+        sendToUser(recipient.id, {
+          type: "friend.request",
+          from: { id: requester.id, handle: requester.handle ?? null, displayName: requester.displayName },
+        });
+      }
       reply.status(201).send({
         friendshipId: row.id,
         status: "pending-outgoing" as const,
@@ -184,6 +195,17 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
         }
         throw err;
       }
+      // Fetch requester identity for the WS payload.
+      const requesterByHandle = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, handle: true, displayName: true },
+      });
+      if (requesterByHandle) {
+        sendToUser(recipient.id, {
+          type: "friend.request",
+          from: { id: requesterByHandle.id, handle: requesterByHandle.handle ?? null, displayName: requesterByHandle.displayName },
+        });
+      }
       reply.status(201).send({
         friendshipId: row.id,
         status: "pending-outgoing" as const,
@@ -207,6 +229,16 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
         where: { id: row.id },
         data: { status: "accepted", respondedAt: new Date() },
       });
+      const accepter = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, handle: true, displayName: true },
+      });
+      if (accepter) {
+        sendToUser(row.requesterId, {
+          type: "friend.accepted",
+          by: { id: accepter.id, handle: accepter.handle ?? null, displayName: accepter.displayName },
+        });
+      }
       reply.status(204).send();
     },
   );
