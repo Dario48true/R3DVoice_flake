@@ -5,6 +5,21 @@ import type {
   ChatWsEvent,
 } from "@redvoice/shared";
 import type { ApiClient } from "./api.js";
+import { routeNotification } from "./notification-router.js";
+import { useUnreadStore } from "./unread-store.js";
+
+/** Snapshot of the authenticated user, kept current by the renderer shell. */
+interface UserSnapshot {
+  id: string;
+  dndUntil?: string | null;
+}
+
+let _currentUser: UserSnapshot | null = null;
+
+/** Called by the React shell whenever the authenticated user changes. */
+export function setCurrentUserForNotifications(user: UserSnapshot | null): void {
+  _currentUser = user;
+}
 
 type Listener = (event: ChatWsEvent) => void;
 
@@ -98,6 +113,24 @@ export class ChatTransport {
       try {
         const event = JSON.parse(typeof msg.data === "string" ? msg.data : "") as ChatWsEvent;
         this.listeners.forEach((l) => l(event));
+
+        const me = _currentUser;
+        if (me) {
+          // Bump unread on incoming chat messages from others.
+          if (event.type === "message" && event.message.authorId !== me.id) {
+            useUnreadStore.getState().bump(event.message.threadType, event.message.threadId);
+          }
+
+          // Route through the notification filter.
+          routeNotification(event, {
+            selfUserId: me.id,
+            dndUntil: me.dndUntil ? new Date(me.dndUntil) : null,
+            getMuteLevel: () => "all", // simplified — full impl with local mute cache lands in Plan 4
+            fireOSNotification: async (p) => {
+              try { await window.redvoice.notify({ title: p.title, body: p.body }); } catch { /* */ }
+            },
+          });
+        }
       } catch {
         /* drop malformed */
       }

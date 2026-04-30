@@ -99,6 +99,8 @@ export interface RedVoiceBridge {
    * Returns an unsubscribe function.
    */
   onInviteCode(cb: (code: string) => void): () => void;
+  /** Fire an OS-level notification via Electron's Notification API. */
+  notify(payload: NotifyPayload): Promise<void>;
 }
 
 export interface LinuxAudioSourceSummary {
@@ -123,3 +125,9 @@ export interface SystemAudioFormat {
 export type DeepLinkEvent =
   | { type: "join-room"; roomId: string }
   | { type: "invite-code"; code: string };
+
+export interface NotifyPayload {
+  title: string;
+  body: string;
+  silent?: boolean;
+}

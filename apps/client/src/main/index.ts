@@ -24,6 +24,7 @@ import {
   parseDeepLink,
   dispatchDeepLink,
 } from "./deep-links.js";
+import { registerNotificationsHandler } from "./notifications.js";
 
 // Force app name / WMClass to "RedVoice" so Plasma/GNOME taskbars match this
 // window to ~/.local/share/applications/redvoice.desktop instead of falling
@@ -367,6 +368,7 @@ app.whenReady().then(async () => {
   registerDeepLinkHandlers();
   registerSystemAudioCaptureHandlers();
   registerLinuxAudioRoutingHandlers();
+  registerNotificationsHandler();
   writeDesktopEntry();
 
   // Dev-only: REDVOICE_SPLASH_DEMO=1 cycles every splash phase slowly and
