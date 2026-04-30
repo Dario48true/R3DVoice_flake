@@ -11,6 +11,7 @@ import { landingRoutes } from "./landing.js";
 import { userRoutes } from "./users/routes.js";
 import { inviteRoutes } from "./invites/routes.js";
 import { notificationRoutes } from "./notifications/routes.js";
+import { presenceRoutes } from "./presence/routes.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -42,6 +43,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(userRoutes);
   await app.register(inviteRoutes);
   await app.register(notificationRoutes);
+  await app.register(presenceRoutes);
 
   return app;
 }

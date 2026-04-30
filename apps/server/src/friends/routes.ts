@@ -13,7 +13,7 @@ const respondParamsSchema = z.object({ id: z.string().min(1) });
 interface FriendDTO {
   friendshipId: string;
   status: "pending-incoming" | "pending-outgoing" | "accepted" | "blocked";
-  user: { id: string; displayName: string; email: string };
+  user: { id: string; displayName: string; email: string; handle: string | null; currentRoom: { id: string; name: string } | null };
   isOnline: boolean;
   requestedAt: string;
   respondedAt: string | null;
@@ -30,8 +30,24 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
           OR: [{ requesterId: userId }, { recipientId: userId }],
         },
         include: {
-          requester: { select: { id: true, displayName: true, email: true } },
-          recipient: { select: { id: true, displayName: true, email: true } },
+          requester: {
+            select: {
+              id: true,
+              displayName: true,
+              email: true,
+              handle: true,
+              currentRoom: { select: { id: true, name: true } },
+            },
+          },
+          recipient: {
+            select: {
+              id: true,
+              displayName: true,
+              email: true,
+              handle: true,
+              currentRoom: { select: { id: true, name: true } },
+            },
+          },
         },
         orderBy: { requestedAt: "desc" },
       });
@@ -49,7 +65,13 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
         return {
           friendshipId: f.id,
           status,
-          user: other,
+          user: {
+            id: other.id,
+            displayName: other.displayName,
+            email: other.email,
+            handle: other.handle ?? null,
+            currentRoom: other.currentRoom ?? null,
+          },
           isOnline: isUserOnline(other.id),
           requestedAt: f.requestedAt.toISOString(),
           respondedAt: f.respondedAt?.toISOString() ?? null,
