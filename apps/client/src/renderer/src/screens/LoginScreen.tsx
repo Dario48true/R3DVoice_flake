@@ -241,17 +241,10 @@ export function LoginScreen(): ReactElement {
             right={
               <button
                 type="button"
+                className="rv-btn"
+                data-variant="ghost"
                 onClick={() => setPickerOpen(true)}
-                style={{
-                  appearance: "none",
-                  background: "transparent",
-                  border: 0,
-                  padding: 0,
-                  color: "var(--text-dim)",
-                  fontSize: "var(--t-xs)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                }}
+                style={{ height: "1.6rem", padding: "0 var(--s-3)", fontSize: "var(--t-xs)" }}
               >
                 Browse public servers
               </button>
@@ -318,20 +311,7 @@ export function LoginScreen(): ReactElement {
           )}
 
           {!totpStep && (
-            <Field
-              label="Password"
-              right={
-                mode === "login" ? (
-                  <a
-                    href="#"
-                    onClick={(e) => e.preventDefault()}
-                    style={{ color: "var(--text-dim)", fontSize: "var(--t-xs)" }}
-                  >
-                    Forgot?
-                  </a>
-                ) : null
-              }
-            >
+            <Field label="Password">
               <input
                 className="rv-input"
                 type="password"

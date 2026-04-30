@@ -45,58 +45,6 @@ function avatarTone(id: string): 1 | 2 | 3 | 4 | 5 {
   return ((id.charCodeAt(0) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
 }
 
-function hostLabel(serverUrl: string): string {
-  try {
-    return new URL(serverUrl).host;
-  } catch {
-    return serverUrl;
-  }
-}
-
-function Stat({
-  label,
-  value,
-  tone,
-  mono,
-}: {
-  label: string;
-  value: string;
-  tone?: "live";
-  mono?: boolean;
-}): ReactElement {
-  return (
-    <div
-      style={{
-        padding: "var(--s-3) var(--s-4)",
-        background: "color-mix(in oklch, var(--bg-elev) 60%, transparent)",
-        border: "1px solid var(--border-soft)",
-        borderRadius: "var(--r-md)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 4,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {tone === "live" && (
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "var(--rv-live)",
-              boxShadow: "0 0 8px var(--rv-live)",
-            }}
-          />
-        )}
-        <span className="rv-label" style={{ fontSize: "var(--t-2xs)" }}>{label}</span>
-      </div>
-      <span className={mono ? "rv-mono" : ""} style={{ fontSize: "var(--t-base)", color: "var(--text)" }}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
 interface LobbyScreenProps {
   pendingInviteCode?: string | null;
   onInviteCodeConsumed?: () => void;
@@ -125,6 +73,9 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
   const [featuresOpen, setFeaturesOpen] = useState(false);
   const [dmInboxOpen, setDmInboxOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
+  const [tipDismissed, setTipDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem("rv:lobby-tip-dismissed") === "1"; } catch { return false; }
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
@@ -431,31 +382,46 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
             )}
           </div>
 
-          <div
-            style={{
-              marginTop: "auto",
-              padding: "var(--s-4)",
-              border: "1px dashed var(--border)",
-              borderRadius: "var(--r-md)",
-              color: "var(--text-dim)",
-              fontSize: "var(--t-xs)",
-              lineHeight: 1.55,
-            }}
-          >
+          {!tipDismissed && (
             <div
-              className="rv-mono"
               style={{
-                textTransform: "uppercase",
-                letterSpacing: ".14em",
-                fontSize: "var(--t-2xs)",
-                marginBottom: 6,
-                color: "var(--text)",
+                marginTop: "auto",
+                padding: "var(--s-3) var(--s-4)",
+                border: "1px dashed var(--border)",
+                borderRadius: "var(--r-md)",
+                color: "var(--text-dim)",
+                fontSize: "var(--t-xs)",
+                lineHeight: 1.55,
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--s-2)",
               }}
             >
-              tip · keybind
+              <span style={{ flex: 1 }}>
+                Push-to-talk binds in <kbd style={kbdStyle}>{MOD_KEY}</kbd> <kbd style={kbdStyle}>,</kbd> →&nbsp;Keybinds.
+              </span>
+              <button
+                type="button"
+                aria-label="Dismiss tip"
+                onClick={() => {
+                  try { localStorage.setItem("rv:lobby-tip-dismissed", "1"); } catch { /* */ }
+                  setTipDismissed(true);
+                }}
+                style={{
+                  appearance: "none",
+                  background: "transparent",
+                  border: 0,
+                  color: "var(--text-faint)",
+                  cursor: "pointer",
+                  padding: 4,
+                  fontSize: "var(--t-sm)",
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
             </div>
-            Push-to-talk binds in <kbd style={kbdStyle}>{MOD_KEY}</kbd> <kbd style={kbdStyle}>,</kbd> →&nbsp;Keybinds.
-          </div>
+          )}
         </aside>
 
         <main style={{ display: "flex", flexDirection: "column", gap: "var(--s-6)", maxWidth: "44rem" }}>
@@ -533,7 +499,7 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
             >
               <input
                 className="rv-input"
-                placeholder="voice.r3dwolfie.com/join/… or room id"
+                placeholder="paste an invite link, room link, or room id"
                 value={joinInput}
                 onChange={(e) => setJoinInput(e.target.value)}
               />
@@ -555,18 +521,6 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
             >
               <span className="rv-mono">redvoice://</span> deep-links also supported.
             </p>
-          </section>
-
-          <section
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "var(--s-3)",
-            }}
-          >
-            <Stat label="Server" value={hostLabel(serverUrl)} tone="live" />
-            <Stat label="RTT" value="—" mono />
-            <Stat label="Build" value="0.1.5" />
           </section>
 
           {status === "loading" && (

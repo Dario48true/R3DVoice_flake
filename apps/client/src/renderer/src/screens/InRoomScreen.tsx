@@ -1994,23 +1994,19 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
             </>
           )}
 
-          <hr className="rv-rule" />
-          <CtxItem onClick={(e) => e.preventDefault()} title="Coming soon">
-            Pin tile
-          </CtxItem>
           {!menuIsLocal && menuParticipant && (
-            <CtxItem
-              onClick={() => {
-                setDmTarget({ id: menuParticipant.id, name: menuParticipant.name });
-                setMenu(null);
-              }}
-            >
-              Send a DM
-            </CtxItem>
+            <>
+              <hr className="rv-rule" />
+              <CtxItem
+                onClick={() => {
+                  setDmTarget({ id: menuParticipant.id, name: menuParticipant.name });
+                  setMenu(null);
+                }}
+              >
+                Send a DM
+              </CtxItem>
+            </>
           )}
-          <CtxItem danger onClick={(e) => e.preventDefault()} title="Coming soon">
-            Mute for me
-          </CtxItem>
         </div>
       )}
 

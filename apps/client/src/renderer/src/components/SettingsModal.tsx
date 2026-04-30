@@ -1335,12 +1335,6 @@ function AboutTab(): ReactElement {
         >
           Report an issue
         </a>
-        <button className="rv-btn" disabled title="Coming soon">
-          Diagnostics…
-        </button>
-        <button className="rv-btn" disabled title="Coming soon">
-          Reset to defaults
-        </button>
       </div>
     </div>
   );
