@@ -7,6 +7,7 @@ import { FriendsPane } from "../components/FriendsPane.js";
 import { NewDmPicker } from "../components/NewDmPicker.js";
 import { RoomChatPanel } from "../components/RoomChatPanel.js";
 import { I } from "../components/Icons.js";
+import { useUnreadStore } from "../lib/unread-store.js";
 
 export function DmsScreen(): ReactElement {
   const me = useAuthStore((s) => s.user);
@@ -29,7 +30,21 @@ export function DmsScreen(): ReactElement {
     } catch { /* */ }
   }, [serverUrl, token]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    if (!token) return;
+    const api = new ApiClient(serverUrl);
+    api.setToken(token);
+    void useUnreadStore.getState().refresh(api);
+  }, [refresh, serverUrl, token]);
+
+  useEffect(() => {
+    if (!active || !token) return;
+    const api = new ApiClient(serverUrl);
+    api.setToken(token);
+    void api.markRead("dm", active);
+    useUnreadStore.getState().clearThread("dm", active);
+  }, [active, serverUrl, token]);
 
   // Sync displayed peer when user picks an existing thread.
   useEffect(() => {

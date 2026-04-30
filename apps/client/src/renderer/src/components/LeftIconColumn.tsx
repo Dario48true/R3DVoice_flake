@@ -2,6 +2,8 @@ import { useState, type ReactElement, type ReactNode } from "react";
 import { useAuthStore } from "../lib/auth-context.js";
 import { I } from "./Icons.js";
 import { UserPanelPopover } from "./UserPanelPopover.js";
+import { UnreadDot } from "./UnreadDot.js";
+import { useUnreadStore } from "../lib/unread-store.js";
 
 export type TopPage = "lobby" | "dms";
 
@@ -48,6 +50,7 @@ export function LeftIconColumn({ active, onNavigate, onOpenSettings }: Props): R
   const me = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const totalUnread = useUnreadStore((s) => s.totalUnread);
 
   return (
     <nav
@@ -68,9 +71,16 @@ export function LeftIconColumn({ active, onNavigate, onOpenSettings }: Props): R
       <NavIcon active={active === "lobby"} onClick={() => onNavigate("lobby")} ariaLabel="Lobby">
         <I.Logo size={16} />
       </NavIcon>
-      <NavIcon active={active === "dms"} onClick={() => onNavigate("dms")} ariaLabel="Direct messages">
-        <I.Chat size={16} />
-      </NavIcon>
+      <div style={{ position: "relative" }}>
+        <NavIcon active={active === "dms"} onClick={() => onNavigate("dms")} ariaLabel="Direct messages">
+          <I.Chat size={16} />
+        </NavIcon>
+        {totalUnread > 0 && (
+          <span style={{ position: "absolute", top: -4, right: -4, pointerEvents: "none" }}>
+            <UnreadDot count={totalUnread} />
+          </span>
+        )}
+      </div>
 
       <div style={{ flex: 1 }} />
 

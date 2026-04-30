@@ -1,5 +1,7 @@
 import { type ReactElement } from "react";
 import type { DmThreadEntry } from "@redvoice/shared";
+import { UnreadDot } from "./UnreadDot.js";
+import { useUnreadStore } from "../lib/unread-store.js";
 
 type Props = {
   threads: DmThreadEntry[];
@@ -12,6 +14,7 @@ function avatarTone(seed: string): 1 | 2 | 3 | 4 | 5 {
 }
 
 export function DmThreadList({ threads, activeThreadId, onSelect }: Props): ReactElement {
+  const counts = useUnreadStore((s) => s.counts);
   if (threads.length === 0) {
     return (
       <div style={{ padding: "var(--s-4)", color: "var(--text-faint)", fontSize: "var(--t-sm)" }}>
@@ -48,8 +51,11 @@ export function DmThreadList({ threads, activeThreadId, onSelect }: Props): Reac
               {(peer.displayName.charAt(0) || "?").toUpperCase()}
             </span>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: "var(--t-sm)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {headline}
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
+                <span style={{ fontSize: "var(--t-sm)", fontWeight: (counts[`dm:${t.threadId}`] ?? 0) > 0 ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
+                  {headline}
+                </span>
+                <UnreadDot count={counts[`dm:${t.threadId}`] ?? 0} />
               </div>
               <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {t.lastMessage.body ?? "(deleted)"}
