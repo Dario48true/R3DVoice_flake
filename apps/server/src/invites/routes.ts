@@ -178,4 +178,85 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
       return base;
     },
   );
+
+  // Redeem
+  app.post<{ Params: { code: string } }>(
+    "/invites/:code/redeem",
+    { preHandler: requireAuth },
+    async (request) => {
+      const parsed = codeParamSchema.safeParse(request.params);
+      if (!parsed.success) throw new ValidationError("invalid code");
+      const userId = request.auth!.userId;
+
+      return await prisma.$transaction(async (tx) => {
+        const inv = await tx.invite.findUnique({ where: { code: parsed.data.code } });
+        if (!inv) throw new NotFoundError("invite not found");
+        if (inv.revokedAt) throw new ValidationError("invite revoked", "INVITE_REVOKED", 410);
+        if (inv.expiresAt && inv.expiresAt.getTime() < Date.now()) {
+          throw new ValidationError("invite expired", "INVITE_EXPIRED", 410);
+        }
+        if (inv.maxUses !== null && inv.uses >= inv.maxUses) {
+          throw new ValidationError("invite full", "INVITE_FULL", 409);
+        }
+        if (inv.creatorId === userId) {
+          throw new ValidationError("cannot redeem your own invite", "SELF_REDEEM", 400);
+        }
+
+        let alreadyApplied = false;
+
+        if (inv.kind === "room") {
+          if (!inv.targetRoomId) throw new Error("room invite missing targetRoomId");
+          const existing = await tx.roomMembership.findUnique({
+            where: { userId_roomId: { userId, roomId: inv.targetRoomId } },
+          });
+          if (existing) {
+            alreadyApplied = true;
+          } else {
+            await tx.roomMembership.create({
+              data: { userId, roomId: inv.targetRoomId, lastJoined: new Date() },
+            });
+          }
+          if (!alreadyApplied) {
+            await tx.invite.update({ where: { id: inv.id }, data: { uses: { increment: 1 } } });
+          }
+          return { kind: "room" as const, redirectTo: `/rooms/${inv.targetRoomId}` };
+        }
+
+        // friend
+        const existingFs = await tx.friendship.findFirst({
+          where: {
+            OR: [
+              { requesterId: inv.creatorId, recipientId: userId },
+              { requesterId: userId, recipientId: inv.creatorId },
+            ],
+          },
+        });
+        if (existingFs) {
+          if (existingFs.status === "accepted") {
+            alreadyApplied = true;
+          } else if (existingFs.status === "pending") {
+            await tx.friendship.update({
+              where: { id: existingFs.id },
+              data: { status: "accepted", respondedAt: new Date() },
+            });
+          } else if (existingFs.status === "blocked") {
+            throw new ValidationError("blocked", "BLOCKED", 403);
+          }
+        } else {
+          await tx.friendship.create({
+            data: {
+              requesterId: inv.creatorId,
+              recipientId: userId,
+              status: "accepted",
+              respondedAt: new Date(),
+            },
+          });
+        }
+        if (!alreadyApplied) {
+          await tx.invite.update({ where: { id: inv.id }, data: { uses: { increment: 1 } } });
+        }
+        return { kind: "friend" as const, redirectTo: "/dms" };
+      });
+    },
+  );
 }

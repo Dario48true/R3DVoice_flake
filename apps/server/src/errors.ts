@@ -12,8 +12,8 @@ export class AppError extends Error {
 }
 
 export class ValidationError extends AppError {
-  constructor(message: string) {
-    super("VALIDATION_ERROR", message, 400);
+  constructor(message: string, code = "VALIDATION_ERROR", statusCode = 400) {
+    super(code, message, statusCode);
   }
 }
 export class AuthError extends AppError {
