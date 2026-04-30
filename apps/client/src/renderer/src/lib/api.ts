@@ -117,6 +117,9 @@ export class ApiClient {
   me(): Promise<UserDTO> {
     return this.request("GET", "/me");
   }
+  updateMe(patch: { avatarUrl?: string | null }): Promise<UserDTO> {
+    return this.request("PATCH", "/me", patch);
+  }
   twoFAEnrollStart(): Promise<TotpEnrollStartResponse> {
     return this.request("POST", "/auth/2fa/enroll-start");
   }
