@@ -6,6 +6,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { ForbiddenError, NotFoundError, ValidationError } from "../errors.js";
 import { generateInviteCode } from "./code.js";
+import { renderInvitePreview, renderInviteNotFound } from "./preview-html.js";
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -257,6 +258,37 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
         }
         return { kind: "friend" as const, redirectTo: "/dms" };
       });
+    },
+  );
+
+  // HTML preview page — public web landing at /invite/:code (singular path)
+  app.get<{ Params: { code: string } }>(
+    "/invite/:code",
+    { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const parsed = codeParamSchema.safeParse(request.params);
+      if (!parsed.success) {
+        reply.code(404).type("text/html").send(renderInviteNotFound());
+        return;
+      }
+      const inv = await prisma.invite.findUnique({
+        where: { code: parsed.data.code },
+        include: { creator: { select: { handle: true, displayName: true } } },
+      });
+      if (!inv || !inv.creator.handle) {
+        reply.code(404).type("text/html").send(renderInviteNotFound());
+        return;
+      }
+      const html = renderInvitePreview({
+        code: inv.code,
+        creatorHandle: inv.creator.handle,
+        creatorDisplayName: inv.creator.displayName,
+        expiresAt: inv.expiresAt,
+        maxUses: inv.maxUses,
+        uses: inv.uses,
+        revokedAt: inv.revokedAt,
+      });
+      reply.type("text/html").send(html);
     },
   );
 }
