@@ -1404,6 +1404,15 @@ function AboutTab(): ReactElement {
         >
           Report an issue
         </a>
+        <a
+          className="rv-btn"
+          href="https://github.com/R3dWolfie/RedVoice/releases"
+          target="_blank"
+          rel="noreferrer"
+          style={{ gridColumn: "span 2" }}
+        >
+          What's new — release notes
+        </a>
       </div>
     </div>
   );
