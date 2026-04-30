@@ -70,3 +70,9 @@ export async function setHandle(app: FastifyInstance, token: string, handle: str
   });
   if (r.statusCode !== 200) throw new Error(`setHandle failed: ${r.statusCode} ${r.body}`);
 }
+
+export async function createRoom(app: FastifyInstance, token: string, name: string): Promise<{ id: string }> {
+  const r = await app.inject({ method: "POST", url: "/rooms", headers: { authorization: `Bearer ${token}` }, payload: { name } });
+  if (r.statusCode !== 201 && r.statusCode !== 200) throw new Error(`createRoom failed: ${r.statusCode} ${r.body}`);
+  return r.json();
+}
