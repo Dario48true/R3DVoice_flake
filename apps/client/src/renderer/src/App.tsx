@@ -9,6 +9,7 @@ import { WindowChrome, Spinner } from "./components/Primitives.js";
 import { LeftIconColumn, type TopPage } from "./components/LeftIconColumn.js";
 import { DmsScreen } from "./screens/DmsScreen.js";
 import { SettingsModal } from "./components/SettingsModal.js";
+import { UpdateToast } from "./components/UpdateToast.js";
 
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
@@ -104,6 +105,7 @@ function Router(): ReactElement {
           )}
         </div>
         {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+        <UpdateToast />
       </div>
     );
   }
