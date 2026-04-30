@@ -69,6 +69,15 @@ app.commandLine.appendSwitch(
   ["UseChromeOSDirectVideoDecoder"].join(","),
 );
 
+// Dev/test escape hatch: run a second instance with an isolated session.
+// REDVOICE_USER_DATA_DIR=/tmp/redvoice-b pnpm --filter @redvoice/client dev
+// Must happen BEFORE requestSingleInstanceLock so the lock is keyed on the
+// overridden userData path — otherwise both instances contend for the same
+// default-path lock and the second silently quits.
+if (process.env["REDVOICE_USER_DATA_DIR"]) {
+  app.setPath("userData", process.env["REDVOICE_USER_DATA_DIR"]);
+}
+
 // Single-instance lock: a second `redvoice://…` launch funnels through
 // `second-instance` instead of spawning another process.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -95,12 +104,6 @@ process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
 
 // electron-vite exposes ELECTRON_RENDERER_URL in dev; absent in prod.
 const RENDERER_DEV_URL = process.env["ELECTRON_RENDERER_URL"];
-
-// Dev/test escape hatch: run a second instance with an isolated session.
-// REDVOICE_USER_DATA_DIR=/tmp/redvoice-b pnpm --filter @redvoice/client dev
-if (process.env["REDVOICE_USER_DATA_DIR"]) {
-  app.setPath("userData", process.env["REDVOICE_USER_DATA_DIR"]);
-}
 
 // Self-relaunch compatibility mode: if a prior session set compat mode, honor it.
 try {
