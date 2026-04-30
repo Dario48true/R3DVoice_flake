@@ -108,4 +108,74 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
       reply.status(204).send();
     },
   );
+
+  const codeParamSchema = z.object({ code: z.string().min(8).max(8) });
+
+  // Public preview — minimal metadata, NO room name leak.
+  app.get<{ Params: { code: string } }>(
+    "/invites/:code",
+    {
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    },
+    async (request) => {
+      const parsed = codeParamSchema.safeParse(request.params);
+      if (!parsed.success) throw new ValidationError("invalid code");
+
+      const inv = await prisma.invite.findUnique({
+        where: { code: parsed.data.code },
+        include: { creator: { select: { handle: true, displayName: true } } },
+      });
+      if (!inv || !inv.creator.handle) throw new NotFoundError("invite not found");
+
+      return {
+        code: inv.code,
+        kind: inv.kind,
+        creator: { handle: inv.creator.handle, displayName: inv.creator.displayName },
+        expiresAt: inv.expiresAt?.toISOString() ?? null,
+        maxUses: inv.maxUses,
+        uses: inv.uses,
+        revokedAt: inv.revokedAt?.toISOString() ?? null,
+      };
+    },
+  );
+
+  // Authed full preview — reveals room name + count when kind=room.
+  app.get<{ Params: { code: string } }>(
+    "/invites/:code/full",
+    { preHandler: requireAuth },
+    async (request) => {
+      const parsed = codeParamSchema.safeParse(request.params);
+      if (!parsed.success) throw new ValidationError("invalid code");
+
+      const inv = await prisma.invite.findUnique({
+        where: { code: parsed.data.code },
+        include: {
+          creator: { select: { handle: true, displayName: true } },
+          targetRoom: { select: { id: true, name: true, _count: { select: { memberships: true } } } },
+        },
+      });
+      if (!inv || !inv.creator.handle) throw new NotFoundError("invite not found");
+
+      const base = {
+        code: inv.code,
+        kind: inv.kind,
+        creator: { handle: inv.creator.handle, displayName: inv.creator.displayName },
+        expiresAt: inv.expiresAt?.toISOString() ?? null,
+        maxUses: inv.maxUses,
+        uses: inv.uses,
+        revokedAt: inv.revokedAt?.toISOString() ?? null,
+      };
+      if (inv.kind === "room" && inv.targetRoom) {
+        return {
+          ...base,
+          targetRoom: {
+            id: inv.targetRoom.id,
+            name: inv.targetRoom.name,
+            memberCount: inv.targetRoom._count.memberships,
+          },
+        };
+      }
+      return base;
+    },
+  );
 }
