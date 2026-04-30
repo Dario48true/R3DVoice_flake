@@ -62,10 +62,13 @@ export class ChatTransport {
   private closed = false;
   private reconnectDelay = 1000;
   private heartbeatTimer: number | null = null;
+  private _muteCache = new Map<string, "all" | "mentions" | "none">();
+  private _api: ApiClient | null = null;
 
-  constructor(serverUrl: string, token: string, _api?: ApiClient) {
+  constructor(serverUrl: string, token: string, api?: ApiClient) {
     this.serverUrl = serverUrl;
     this.token = token;
+    this._api = api ?? null;
   }
 
   /** Public read so the singleton accessor can detect token/server changes. */
@@ -106,6 +109,32 @@ export class ChatTransport {
   unsubscribe(threadType: ChatThreadType, threadId: string): void {
     this.subscribed.delete(`${threadType}:${threadId}`);
     this.sendCmd({ type: "unsubscribe", threadType, threadId });
+  }
+
+  /**
+   * Returns the cached mute level for a thread, or fetches it lazily on miss.
+   * Defaults to "all" when api isn't wired or the fetch fails.
+   */
+  async getMuteLevel(
+    threadType: ChatThreadType,
+    threadId: string,
+  ): Promise<"all" | "mentions" | "none"> {
+    const key = `${threadType}:${threadId}`;
+    const cached = this._muteCache.get(key);
+    if (cached !== undefined) return cached;
+    if (!this._api) return "all";
+    try {
+      const r = await this._api.getMute(threadType, threadId);
+      this._muteCache.set(key, r.level);
+      return r.level;
+    } catch {
+      return "all";
+    }
+  }
+
+  /** Drop the cached value for a thread — call after a setMute mutation. */
+  invalidateMute(threadType: ChatThreadType, threadId: string): void {
+    this._muteCache.delete(`${threadType}:${threadId}`);
   }
 
   private connect(): void {
@@ -170,10 +199,10 @@ export class ChatTransport {
           );
         if (suppressForActiveThread) return;
 
-        routeNotification(event, {
+        void routeNotification(event, {
           selfUserId: me.id,
           dndUntil: me.dndUntil ? new Date(me.dndUntil) : null,
-          getMuteLevel: () => "all", // simplified — full impl with local mute cache lands in Plan 4
+          getMuteLevel: async (threadType, threadId) => this.getMuteLevel(threadType, threadId),
           fireOSNotification: async (p) => {
             try { await window.redvoice.notify({ title: p.title, body: p.body }); } catch { /* */ }
           },
@@ -244,7 +273,7 @@ let _instance: ChatTransport | null = null;
  * — calling it again with the same serverUrl+token returns the existing
  * instance; calling with different credentials tears down the old one first.
  */
-export function ensureTransport(serverUrl: string, token: string): ChatTransport {
+export function ensureTransport(serverUrl: string, token: string, api?: ApiClient): ChatTransport {
   if (
     _instance !== null &&
     _instance.currentToken === token &&
@@ -255,7 +284,7 @@ export function ensureTransport(serverUrl: string, token: string): ChatTransport
   if (_instance !== null) {
     _instance.stop();
   }
-  _instance = new ChatTransport(serverUrl, token);
+  _instance = new ChatTransport(serverUrl, token, api);
   _instance.start();
   return _instance;
 }

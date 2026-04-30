@@ -9,7 +9,7 @@ function ctx(overrides: Partial<{ selfUserId: string; dndUntil: Date | null; mut
     arg: {
       selfUserId: overrides.selfUserId ?? "me",
       dndUntil: overrides.dndUntil ?? null,
-      getMuteLevel: () => (overrides.muteLevel ?? "all") as "all" | "mentions" | "none",
+      getMuteLevel: async () => (overrides.muteLevel ?? "all") as "all" | "mentions" | "none",
       fireOSNotification: fire,
     },
   };
@@ -35,45 +35,45 @@ const msg = (overrides: Partial<{ authorId: string; threadType: "room" | "dm"; t
 });
 
 describe("notification-router", () => {
-  it("fires for plain message when level=all and not in DND", () => {
+  it("fires for plain message when level=all and not in DND", async () => {
     const c = ctx();
-    routeNotification(msg(), c.arg);
+    await routeNotification(msg(), c.arg);
     expect(c.fire).toHaveBeenCalledTimes(1);
   });
 
-  it("does not fire for plain message when level=mentions", () => {
+  it("does not fire for plain message when level=mentions", async () => {
     const c = ctx({ muteLevel: "mentions" });
-    routeNotification(msg(), c.arg);
+    await routeNotification(msg(), c.arg);
     expect(c.fire).not.toHaveBeenCalled();
   });
 
-  it("does not fire for plain message when level=none", () => {
+  it("does not fire for plain message when level=none", async () => {
     const c = ctx({ muteLevel: "none" });
-    routeNotification(msg(), c.arg);
+    await routeNotification(msg(), c.arg);
     expect(c.fire).not.toHaveBeenCalled();
   });
 
-  it("does not fire for self-authored", () => {
+  it("does not fire for self-authored", async () => {
     const c = ctx();
-    routeNotification(msg({ authorId: "me" }), c.arg);
+    await routeNotification(msg({ authorId: "me" }), c.arg);
     expect(c.fire).not.toHaveBeenCalled();
   });
 
-  it("does not fire for plain message when DND is active", () => {
+  it("does not fire for plain message when DND is active", async () => {
     const c = ctx({ dndUntil: new Date(Date.now() + 60_000) });
-    routeNotification(msg(), c.arg);
+    await routeNotification(msg(), c.arg);
     expect(c.fire).not.toHaveBeenCalled();
   });
 
-  it("friend.request fires even in DND", () => {
+  it("friend.request fires even in DND", async () => {
     const c = ctx({ dndUntil: new Date(Date.now() + 60_000) });
-    routeNotification({ type: "friend.request", from: { id: "x", handle: "x", displayName: "X" } }, c.arg);
+    await routeNotification({ type: "friend.request", from: { id: "x", handle: "x", displayName: "X" } }, c.arg);
     expect(c.fire).toHaveBeenCalledTimes(1);
   });
 
-  it("chat.mention fires when level=mentions", () => {
+  it("chat.mention fires when level=mentions", async () => {
     const c = ctx({ muteLevel: "mentions" });
-    routeNotification({
+    await routeNotification({
       type: "chat.mention",
       message: makeMessage(),
     } as ChatWsEvent, c.arg);

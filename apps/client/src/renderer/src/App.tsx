@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { AuthProvider, useAuthStore, useNeedsHandle } from "./lib/auth-context.js";
 import { disconnectTransport, ensureTransport, setCurrentUserForNotifications } from "./lib/chat-transport.js";
+import { ApiClient } from "./lib/api.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { HandlePickGate } from "./components/HandlePickGate.js";
@@ -28,7 +29,9 @@ function Router(): ReactElement {
   // isn't viewing a chat panel. Connect on auth, disconnect on logout.
   useEffect(() => {
     if (token && serverUrl) {
-      ensureTransport(serverUrl, token);
+      const api = new ApiClient(serverUrl);
+      api.setToken(token);
+      ensureTransport(serverUrl, token, api);
       return () => {
         // Don't disconnect on every re-render — only on actual logout
         // (token cleared). The next branch handles that.

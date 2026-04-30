@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { MuteLevel } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
+import { getTransport } from "../lib/chat-transport.js";
 
 type Props = {
   threadType: "room" | "dm";
@@ -34,6 +35,7 @@ export function ThreadHeader({ threadType, threadId, title, subtitle }: Props): 
     const api = new ApiClient(serverUrl); api.setToken(token);
     try {
       await api.setMute(threadType, threadId, next);
+      getTransport()?.invalidateMute(threadType, threadId);
       setLevel(next);
     } finally { setBusy(false); }
   }, [serverUrl, token, threadType, threadId]);

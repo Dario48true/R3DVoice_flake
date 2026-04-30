@@ -6,7 +6,7 @@ type RouteContext = {
   /** Current DND state — null means not in DND. */
   dndUntil: Date | null;
   /** Mute lookup for any (threadType, threadId). Returns "all" when no row. */
-  getMuteLevel(threadType: "room" | "dm", threadId: string): MuteLevel;
+  getMuteLevel(threadType: "room" | "dm", threadId: string): Promise<MuteLevel>;
   /** Cross to main process. */
   fireOSNotification(payload: { title: string; body: string }): Promise<void>;
 };
@@ -14,13 +14,13 @@ type RouteContext = {
 /**
  * Decide whether a WS event should fire an OS notification, and fire it.
  */
-export function routeNotification(event: ChatWsEvent, ctx: RouteContext): void {
+export async function routeNotification(event: ChatWsEvent, ctx: RouteContext): Promise<void> {
   const dndActive = ctx.dndUntil !== null && ctx.dndUntil.getTime() > Date.now();
 
   switch (event.type) {
     case "chat.mention": {
       if (event.message.authorId === ctx.selfUserId) return;
-      const lvl = ctx.getMuteLevel(event.message.threadType, event.message.threadId);
+      const lvl = await ctx.getMuteLevel(event.message.threadType, event.message.threadId);
       if (lvl === "none") return;
       if (dndActive) return;
       void ctx.fireOSNotification({
@@ -31,7 +31,7 @@ export function routeNotification(event: ChatWsEvent, ctx: RouteContext): void {
     }
     case "message": {
       if (event.message.authorId === ctx.selfUserId) return;
-      const lvl = ctx.getMuteLevel(event.message.threadType, event.message.threadId);
+      const lvl = await ctx.getMuteLevel(event.message.threadType, event.message.threadId);
       if (lvl === "none") return;
       if (lvl === "mentions") return; // chat.mention handles the mention case separately
       if (dndActive) return;
