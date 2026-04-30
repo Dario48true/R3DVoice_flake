@@ -3,6 +3,7 @@ import type { DmThreadEntry } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
 import { DmThreadList } from "../components/DmThreadList.js";
+import { FriendsPane } from "../components/FriendsPane.js";
 import { NewDmPicker } from "../components/NewDmPicker.js";
 import { RoomChatPanel } from "../components/RoomChatPanel.js";
 import { I } from "../components/Icons.js";
@@ -15,6 +16,7 @@ export function DmsScreen(): ReactElement {
   const [threads, setThreads] = useState<DmThreadEntry[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
   const [activePeer, setActivePeer] = useState<{ id: string; handle: string | null; displayName: string } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -73,8 +75,29 @@ export function DmsScreen(): ReactElement {
             <I.Plus size={12} /> New
           </button>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "var(--s-2) var(--s-3)" }}>
+        <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "var(--s-2) var(--s-3)" }}>
           <DmThreadList threads={threads} activeThreadId={active} onSelect={setActive} />
+        </div>
+        <div style={{ borderTop: "1px solid var(--border-soft)", flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => setFriendsOpen((v) => !v)}
+            style={{
+              width: "100%",
+              padding: "var(--s-3) var(--s-4)",
+              background: "transparent",
+              border: 0,
+              color: "var(--text)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--s-2)",
+              fontWeight: 500,
+            }}
+          >
+            Friends {friendsOpen ? "▾" : "▸"}
+          </button>
+          {friendsOpen && <FriendsPane />}
         </div>
       </aside>
 

@@ -1,0 +1,144 @@
+import { useCallback, useEffect, useState, type ReactElement } from "react";
+import type { FriendDTO } from "@redvoice/shared";
+import { useAuthStore } from "../lib/auth-context.js";
+import { ApiClient } from "../lib/api.js";
+import { I } from "./Icons.js";
+import { InviteCreateModal } from "./InviteCreateModal.js";
+import { MyInvitesList } from "./MyInvitesList.js";
+
+export function FriendsPane(): ReactElement {
+  const serverUrl = useAuthStore((s) => s.serverUrl);
+  const token = useAuthStore((s) => s.token);
+  const [friends, setFriends] = useState<FriendDTO[]>([]);
+  const [addInput, setAddInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  const apiFor = useCallback(() => {
+    const api = new ApiClient(serverUrl); api.setToken(token); return api;
+  }, [serverUrl, token]);
+
+  const refresh = useCallback(async () => {
+    try { const r = await apiFor().friends(); setFriends(r.friends); }
+    catch (e) { setError(e instanceof Error ? e.message : "failed to load"); }
+  }, [apiFor]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const sendRequest = async (): Promise<void> => {
+    const raw = addInput.trim();
+    if (!raw) return;
+    setBusy(true); setError(null);
+    try {
+      const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
+      if (looksLikeEmail) {
+        await apiFor().friendRequest(raw);
+      } else {
+        await apiFor().friendRequestByHandle(raw.replace(/^@/, ""));
+      }
+      setAddInput("");
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed to send");
+    } finally { setBusy(false); }
+  };
+
+  const accept = async (id: string): Promise<void> => {
+    try { await apiFor().friendAccept(id); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : "failed"); }
+  };
+  const reject = async (id: string): Promise<void> => {
+    try { await apiFor().friendReject(id); await refresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : "failed"); }
+  };
+
+  const incoming = friends.filter((f) => f.status === "pending-incoming");
+  const outgoing = friends.filter((f) => f.status === "pending-outgoing");
+  const accepted = friends.filter((f) => f.status === "accepted");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)", padding: "var(--s-3) var(--s-4)" }}>
+      <div>
+        <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Add a friend</div>
+        <div style={{ display: "flex", gap: "var(--s-2)" }}>
+          <input
+            className="rv-input"
+            placeholder="@handle or email"
+            value={addInput}
+            onChange={(e) => setAddInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendRequest(); } }}
+            disabled={busy}
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="rv-btn"
+            data-variant="primary"
+            onClick={() => void sendRequest()}
+            disabled={busy || !addInput.trim()}
+          >
+            <I.Plus size={12} />
+          </button>
+        </div>
+        <button
+          type="button"
+          className="rv-btn"
+          data-variant="ghost"
+          onClick={() => setInviteOpen(true)}
+          style={{ marginTop: "var(--s-2)", width: "100%", fontSize: "var(--t-xs)" }}
+        >
+          Or generate an invite link
+        </button>
+        <InviteCreateModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
+      </div>
+
+      {error && <div style={{ color: "var(--accent)", fontSize: "var(--t-sm)" }}>{error}</div>}
+
+      {incoming.length > 0 && (
+        <section>
+          <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Pending — incoming</div>
+          {incoming.map((f) => (
+            <div key={f.friendshipId} style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", padding: "var(--s-2) 0", fontSize: "var(--t-sm)" }}>
+              <span style={{ flex: 1 }}>{f.user.displayName}</span>
+              <button className="rv-btn" data-variant="primary" style={{ height: "1.7rem", fontSize: "var(--t-xs)" }} onClick={() => void accept(f.friendshipId)}>Accept</button>
+              <button className="rv-btn" data-variant="ghost" style={{ height: "1.7rem", fontSize: "var(--t-xs)" }} onClick={() => void reject(f.friendshipId)}>Decline</button>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {accepted.length > 0 && (
+        <section>
+          <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Friends ({accepted.length})</div>
+          {accepted.map((f) => (
+            <div key={f.friendshipId} style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", padding: "var(--s-2) 0", fontSize: "var(--t-sm)" }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: f.isOnline ? "var(--rv-live)" : "var(--text-faint)",
+              }} />
+              <span style={{ flex: 1 }}>{f.user.displayName}</span>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {outgoing.length > 0 && (
+        <section>
+          <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Pending — sent</div>
+          {outgoing.map((f) => (
+            <div key={f.friendshipId} style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", padding: "var(--s-2) 0", fontSize: "var(--t-sm)" }}>
+              <span style={{ flex: 1, color: "var(--text-faint)" }}>{f.user.displayName}</span>
+              <button className="rv-btn" data-variant="ghost" style={{ height: "1.7rem", fontSize: "var(--t-xs)" }} onClick={() => void reject(f.friendshipId)}>Cancel</button>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section>
+        <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>My invites</div>
+        <MyInvitesList />
+      </section>
+    </div>
+  );
+}
