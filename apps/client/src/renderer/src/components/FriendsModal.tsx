@@ -4,6 +4,7 @@ import { ApiClient } from "../lib/api.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { Modal } from "./Modal.js";
 import { I } from "./Icons.js";
+import { InviteCreateModal } from "./InviteCreateModal.js";
 
 interface Props {
   open: boolean;
@@ -21,7 +22,9 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState("");
+  const [handleInput, setHandleInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const apiFor = (): ApiClient => {
     const api = new ApiClient(serverUrl);
@@ -59,6 +62,22 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to send");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendByHandle = async (): Promise<void> => {
+    const handle = handleInput.trim().toLowerCase().replace(/^@/, "");
+    if (!handle) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFor().friendRequestByHandle(handle);
+      setHandleInput("");
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed");
     } finally {
       setBusy(false);
     }
@@ -121,6 +140,41 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
           <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 4 }}>
             They'll see your request in their Friends tab and can accept or reject.
           </div>
+          <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
+            <input
+              className="rv-input"
+              placeholder="add by @handle"
+              value={handleInput}
+              onChange={(e) => setHandleInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void sendByHandle();
+                }
+              }}
+              style={{ flex: 1 }}
+              disabled={busy}
+            />
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="primary"
+              disabled={busy || !handleInput.trim()}
+              onClick={() => void sendByHandle()}
+            >
+              Send
+            </button>
+          </div>
+          <button
+            type="button"
+            className="rv-btn"
+            data-variant="ghost"
+            onClick={() => setInviteOpen(true)}
+            style={{ marginTop: "var(--s-3)" }}
+          >
+            Or generate an invite link
+          </button>
+          <InviteCreateModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
         </div>
 
         {error && (

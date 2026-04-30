@@ -3,6 +3,7 @@ import type { RoomDTO, RoomMemberDTO } from "@redvoice/shared";
 import { ApiClient, ApiError } from "../lib/api.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { I } from "./Icons.js";
+import { InviteCreateModal } from "./InviteCreateModal.js";
 
 interface Props {
   roomId: string;
@@ -33,7 +34,7 @@ export function RoomInfoPanel({ roomId, onDeparture, onClose }: Props): ReactEle
   const [danger, setDanger] = useState<DangerConfirm>(null);
   const [transferTargetId, setTransferTargetId] = useState<string | null>(null);
   const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
-  const [inviteUserId, setInviteUserId] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const api = (() => {
     const a = new ApiClient(serverUrl);
@@ -79,16 +80,6 @@ export function RoomInfoPanel({ roomId, onDeparture, onClose }: Props): ReactEle
     await withBusy(async () => {
       const updated = await api.updateRoom(roomId, { isPublic: !room.isPublic });
       setRoom(updated);
-    });
-  }
-
-  async function invite(): Promise<void> {
-    const id = inviteUserId.trim();
-    if (!id) return;
-    await withBusy(async () => {
-      const m = await api.inviteRoomMember(roomId, id);
-      setMembers((prev) => [...prev.filter((x) => x.userId !== m.userId), m]);
-      setInviteUserId("");
     });
   }
 
@@ -269,31 +260,23 @@ export function RoomInfoPanel({ roomId, onDeparture, onClose }: Props): ReactEle
             ))}
           </div>
 
-          {/* Owner: invite */}
-          {isOwner && (
-            <div style={{ display: "flex", gap: "var(--s-2)", marginBottom: "var(--s-4)" }}>
-              <input
-                className="rv-input"
-                placeholder="Invite by user ID…"
-                value={inviteUserId}
-                onChange={(e) => setInviteUserId(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void invite();
-                }}
-                style={{ flex: 1, fontSize: "var(--t-xs)", height: "1.8rem" }}
-              />
-              <button
-                type="button"
-                onClick={() => void invite()}
-                disabled={busyAction || !inviteUserId.trim()}
-                className="rv-btn"
-                data-variant="primary"
-                style={{ height: "1.8rem", fontSize: "var(--t-xs)", padding: "0 var(--s-3)" }}
-              >
-                Invite
-              </button>
-            </div>
-          )}
+          {/* Invite to room */}
+          <div style={{ marginBottom: "var(--s-4)" }}>
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="primary"
+              onClick={() => setInviteOpen(true)}
+              style={{ width: "100%", fontSize: "var(--t-xs)" }}
+            >
+              Invite to room
+            </button>
+            <InviteCreateModal
+              open={inviteOpen}
+              onClose={() => setInviteOpen(false)}
+              roomId={roomId}
+            />
+          </div>
 
           {/* Danger zone */}
           <div className="rv-section-head" style={{ marginTop: "var(--s-4)" }}>
