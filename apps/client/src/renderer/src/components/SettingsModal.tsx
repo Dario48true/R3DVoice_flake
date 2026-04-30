@@ -876,7 +876,15 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
   const user = useAuthStore((s) => s.user);
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const logout = useAuthStore((s) => s.logout);
+  const updateAvatarUrl = useAuthStore((s) => s.updateAvatarUrl);
   const [confirming, setConfirming] = useState(false);
+  const [avatarUrlDraft, setAvatarUrlDraft] = useState(user?.avatarUrl ?? "");
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAvatarUrlDraft(user?.avatarUrl ?? "");
+  }, [user?.avatarUrl]);
 
   const handleSwitch = async (): Promise<void> => {
     await logout();
@@ -916,6 +924,63 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
             {user?.email ?? ""}
           </span>
         </div>
+      </div>
+
+      <div className="rv-field">
+        <label className="rv-label">Profile picture URL</label>
+        <input
+          className="rv-input"
+          type="url"
+          placeholder="https://…"
+          value={avatarUrlDraft}
+          onChange={(e) => setAvatarUrlDraft(e.target.value)}
+          disabled={avatarBusy}
+        />
+        <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-2)", alignItems: "center" }}>
+          <Avatar
+            src={avatarUrlDraft.trim() || null}
+            fallbackInitials={user?.displayName ?? ""}
+            fallbackColorSeed={user?.id ?? ""}
+            size={48}
+          />
+          <button
+            type="button"
+            className="rv-btn"
+            data-variant="primary"
+            disabled={avatarBusy || avatarUrlDraft === (user?.avatarUrl ?? "")}
+            onClick={async () => {
+              setAvatarBusy(true);
+              setAvatarError(null);
+              try {
+                const next = avatarUrlDraft.trim();
+                await updateAvatarUrl(next === "" ? null : next);
+              } catch (e) {
+                setAvatarError(e instanceof Error ? e.message : "failed to save");
+              } finally {
+                setAvatarBusy(false);
+              }
+            }}
+          >
+            Save
+          </button>
+          {(user?.avatarUrl ?? null) !== null && (
+            <button
+              type="button"
+              className="rv-btn"
+              data-variant="ghost"
+              disabled={avatarBusy}
+              onClick={async () => {
+                setAvatarBusy(true);
+                try { await updateAvatarUrl(null); setAvatarUrlDraft(""); }
+                finally { setAvatarBusy(false); }
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        {avatarError && <div style={{ color: "var(--accent)", fontSize: "var(--t-sm)", marginTop: "var(--s-1)" }}>{avatarError}</div>}
+        <div className="rv-field-help">Paste a direct image URL (https only). Falls back to your initials if missing or broken.</div>
       </div>
 
       <div className="rv-section-head">

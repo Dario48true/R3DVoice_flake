@@ -29,6 +29,7 @@ export interface AuthState {
   hydrate(): Promise<void>;
   /** Re-fetch /me and update the user slot. Used after 2FA toggles, profile edits, etc. */
   refreshUser(): Promise<void>;
+  updateAvatarUrl(url: string | null): Promise<void>;
   setServerUrl(url: string): void;
 }
 
@@ -169,6 +170,12 @@ export function createAuthStore(
       } catch {
         // Best-effort refresh — leave existing user state alone on failure.
       }
+    },
+
+    async updateAvatarUrl(url) {
+      const updated = await api.updateMe({ avatarUrl: url });
+      const avatarUrl = updated.avatarUrl ?? null;
+      set((s) => ({ user: s.user ? { ...s.user, avatarUrl } : updated }));
     },
 
     setServerUrl(url) {
