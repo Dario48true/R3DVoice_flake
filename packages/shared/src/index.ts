@@ -39,6 +39,7 @@ export interface UserDTO {
   email: string;
   displayName: string;
   handle?: string | null;
+  avatarUrl?: string | null;
   totpEnabled?: boolean;
   dndUntil?: string | null;
 }
@@ -281,6 +282,18 @@ export const setDndSchema = z.object({
 export const setPresenceSchema = z.object({
   roomId: z.string().nullable(),
 });
+
+export const updateMeSchema = z.object({
+  avatarUrl: z
+    .string()
+    .url()
+    .max(2048)
+    .startsWith("https://")
+    .nullable()
+    .optional(),
+});
+
+export type UpdateMeRequest = z.infer<typeof updateMeSchema>;
 
 export interface UnreadCountsResponse {
   /** Map keyed by `${threadType}:${threadId}` → count of unread messages. */
