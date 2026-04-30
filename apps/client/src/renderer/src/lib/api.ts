@@ -22,6 +22,8 @@ import type {
   FriendsListResponse,
   FriendRequestResponse,
   InviteDTO,
+  UnreadCountsResponse,
+  MuteLevel,
 } from "@redvoice/shared";
 
 export class ApiError extends Error {
@@ -237,6 +239,31 @@ export class ApiClient {
 
   redeemInvite(code: string): Promise<{ kind: "room" | "friend"; redirectTo: string }> {
     return this.request("POST", `/invites/${encodeURIComponent(code)}/redeem`);
+  }
+
+  // Unread / mute / DND / presence
+  async markRead(threadType: "room" | "dm", threadId: string, lastReadAt?: string): Promise<void> {
+    const body: { threadType: string; threadId: string; lastReadAt?: string } = { threadType, threadId };
+    if (lastReadAt) body.lastReadAt = lastReadAt;
+    await this.request("POST", "/chat/read", body);
+  }
+
+  getUnread(): Promise<UnreadCountsResponse> {
+    return this.request("GET", "/chat/unread");
+  }
+
+  async setMute(threadType: "room" | "dm", threadId: string, level: MuteLevel, mutedUntil?: string | null): Promise<void> {
+    const body: { level: MuteLevel; mutedUntil?: string | null } = { level };
+    if (mutedUntil !== undefined) body.mutedUntil = mutedUntil;
+    await this.request("PATCH", `/chat/threads/${threadType}/${encodeURIComponent(threadId)}/mute`, body);
+  }
+
+  async setDnd(until: string | null): Promise<void> {
+    await this.request("PATCH", "/me/dnd", { until });
+  }
+
+  async setPresence(roomId: string | null): Promise<void> {
+    await this.request("POST", "/me/presence", { roomId });
   }
 
   // Internal helper for HTTP methods beyond GET/POST.
