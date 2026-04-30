@@ -22,8 +22,7 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
   const [friends, setFriends] = useState<FriendDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [emailInput, setEmailInput] = useState("");
-  const [handleInput, setHandleInput] = useState("");
+  const [addInput, setAddInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -52,33 +51,27 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, token, serverUrl]);
 
-  const handleSend = async (): Promise<void> => {
-    const email = emailInput.trim();
-    if (!email) return;
+  const sendRequest = async (): Promise<void> => {
+    const raw = addInput.trim();
+    if (!raw) return;
     setBusy(true);
     setError(null);
     try {
-      await apiFor().friendRequest(email);
-      setEmailInput("");
+      // Auto-detect: looks-like-email goes to /friends/request; everything
+      // else (with or without leading @) goes to /friends/request-by-handle.
+      // The handle endpoint validates format server-side, so a typo'd
+      // non-email non-handle (e.g. "bob smith") gets a clear 400 from there.
+      const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw);
+      if (looksLikeEmail) {
+        await apiFor().friendRequest(raw);
+      } else {
+        const handle = raw.replace(/^@/, "");
+        await apiFor().friendRequestByHandle(handle);
+      }
+      setAddInput("");
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to send");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sendByHandle = async (): Promise<void> => {
-    const handle = handleInput.trim().toLowerCase().replace(/^@/, "");
-    if (!handle) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFor().friendRequestByHandle(handle);
-      setHandleInput("");
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "failed");
     } finally {
       setBusy(false);
     }
@@ -109,20 +102,19 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
   return (
     <Modal open={open} onClose={onClose} title="Friends" width="min(94vw, 600px)">
       <div style={{ padding: "var(--s-5) var(--s-6)", display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
-        {/* Add by email */}
+        {/* Add a friend */}
         <div>
           <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Add a friend</div>
           <div style={{ display: "flex", gap: "var(--s-2)" }}>
             <input
               className="rv-input"
-              type="email"
-              placeholder="email@example.com"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
+              placeholder="@handle or email"
+              value={addInput}
+              onChange={(e) => setAddInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  void handleSend();
+                  void sendRequest();
                 }
               }}
               style={{ flex: 1 }}
@@ -132,39 +124,14 @@ export function FriendsModal({ open, onClose, onOpenDm }: Props): ReactElement {
               type="button"
               className="rv-btn"
               data-variant="primary"
-              onClick={() => void handleSend()}
-              disabled={busy || !emailInput.trim()}
+              onClick={() => void sendRequest()}
+              disabled={busy || !addInput.trim()}
             >
               <I.Plus size={14} /> Request
             </button>
           </div>
           <div style={{ fontSize: "var(--t-xs)", color: "var(--text-faint)", marginTop: 4 }}>
             They'll see your request in their Friends tab and can accept or reject.
-          </div>
-          <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
-            <input
-              className="rv-input"
-              placeholder="add by @handle"
-              value={handleInput}
-              onChange={(e) => setHandleInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void sendByHandle();
-                }
-              }}
-              style={{ flex: 1 }}
-              disabled={busy}
-            />
-            <button
-              type="button"
-              className="rv-btn"
-              data-variant="primary"
-              disabled={busy || !handleInput.trim()}
-              onClick={() => void sendByHandle()}
-            >
-              Send
-            </button>
           </div>
           <button
             type="button"
