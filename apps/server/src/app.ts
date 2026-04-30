@@ -8,6 +8,7 @@ import { chatRoutes } from "./chat/routes.js";
 import { chatWsRoutes } from "./chat/ws.js";
 import { friendsRoutes } from "./friends/routes.js";
 import { landingRoutes } from "./landing.js";
+import { userRoutes } from "./users/routes.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -36,6 +37,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(chatWsRoutes);
   await app.register(chatRoutes);
   await app.register(friendsRoutes);
+  await app.register(userRoutes);
 
   return app;
 }

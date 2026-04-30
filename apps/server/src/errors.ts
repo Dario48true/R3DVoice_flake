@@ -32,8 +32,8 @@ export class NotFoundError extends AppError {
   }
 }
 export class ConflictError extends AppError {
-  constructor(message: string) {
-    super("CONFLICT", message, 409);
+  constructor(message: string, code: string = "CONFLICT") {
+    super(code, message, 409);
   }
 }
 
