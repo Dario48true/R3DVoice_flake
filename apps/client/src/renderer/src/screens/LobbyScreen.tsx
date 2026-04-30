@@ -2,10 +2,6 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties,
 import { ApiClient } from "../lib/api.js";
 import { createRoomsStore, extractInviteCode, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
-import { FeaturesPanel } from "../components/FeaturesPanel.js";
-import { DmInboxModal } from "../components/DmInboxModal.js";
-import { FriendsModal } from "../components/FriendsModal.js";
-import { SettingsModal } from "../components/SettingsModal.js";
 import { I } from "../components/Icons.js";
 import { Spinner } from "../components/Primitives.js";
 import { MOD_KEY } from "../lib/platform.js";
@@ -52,8 +48,6 @@ interface LobbyScreenProps {
 }
 
 export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteCode }: LobbyScreenProps = {}): ReactElement {
-  const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
   const token = useAuthStore((s) => s.token);
   const serverUrl = useAuthStore((s) => s.serverUrl);
 
@@ -70,14 +64,9 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
   const activeRoomId = useRoomsStore(store, (s) => s.activeRoomId);
 
   const [phase, setPhase] = useState<Phase>({ kind: "lobby" });
-  const [featuresOpen, setFeaturesOpen] = useState(false);
-  const [dmInboxOpen, setDmInboxOpen] = useState(false);
-  const [friendsOpen, setFriendsOpen] = useState(false);
   const [tipDismissed, setTipDismissed] = useState<boolean>(() => {
     try { return localStorage.getItem("rv:lobby-tip-dismissed") === "1"; } catch { return false; }
   });
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
   useEffect(() => {
     void store.getState().refresh();
   }, [store]);
@@ -205,8 +194,6 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
     );
   }
 
-  const avatarInitial = user?.displayName?.[0]?.toUpperCase() ?? "?";
-  const displayName = user?.displayName ?? "";
   const quickChips = ["Quick chat", "Stream night", "1:1", "Listening party"];
 
   return (
@@ -215,69 +202,18 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           padding: "var(--s-3) var(--s-6)",
           borderBottom: "1px solid var(--border-soft)",
-          background: "color-mix(in oklch, var(--rv-ink-0) 30%, transparent)",
-          backdropFilter: "blur(8px)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
-          <I.Logo size={24} />
-          <span style={{ fontWeight: 700, letterSpacing: "-0.01em", fontSize: "var(--t-md)" }}>RedVoice</span>
-          <span
-            className="rv-badge"
-            data-tone={online === "ok" ? "live" : online === "down" ? "red" : "amber"}
-            style={{ marginLeft: "var(--s-3)" }}
-          >
-            <span className="pip" />{" "}
-            {online === "checking" ? "connecting…" : online === "ok" ? "connected" : "offline"}
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--s-2)",
-              padding: "0 var(--s-3)",
-              height: "2rem",
-              border: "1px solid var(--border-soft)",
-              borderRadius: "var(--r-pill)",
-              background: "color-mix(in oklch, var(--bg-elev) 80%, transparent)",
-            }}
-          >
-            <span className="rv-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>
-              {avatarInitial}
-            </span>
-            <span style={{ fontSize: "var(--t-sm)" }}>{displayName}</span>
-          </div>
-          <button className="rv-btn" data-variant="ghost" onClick={() => setFriendsOpen(true)}>
-            <I.Plus size={14} /> Friends
-          </button>
-          <button className="rv-btn" data-variant="ghost" onClick={() => setDmInboxOpen(true)}>
-            <I.Chat size={14} /> DMs
-          </button>
-          <button className="rv-btn" data-variant="ghost" onClick={() => setFeaturesOpen(true)}>
-            <I.Star size={14} /> Changelog
-          </button>
-          <button
-            className="rv-btn rv-btn-icon"
-            data-variant="ghost"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Settings"
-          >
-            <I.Settings size={16} />
-          </button>
-          <button
-            className="rv-btn rv-btn-icon"
-            data-variant="ghost"
-            onClick={() => void logout()}
-            aria-label="Log out"
-          >
-            <I.Logout size={16} />
-          </button>
-        </div>
+        <span
+          className="rv-badge"
+          data-tone={online === "ok" ? "live" : online === "down" ? "red" : "amber"}
+        >
+          <span className="pip" />{" "}
+          {online === "checking" ? "connecting…" : online === "ok" ? "connected" : "offline"}
+        </span>
       </header>
 
       <div
@@ -560,17 +496,6 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
         </main>
       </div>
 
-      {featuresOpen && <FeaturesPanel onClose={() => setFeaturesOpen(false)} />}
-      <DmInboxModal open={dmInboxOpen} onClose={() => setDmInboxOpen(false)} />
-      <FriendsModal
-        open={friendsOpen}
-        onClose={() => setFriendsOpen(false)}
-        onOpenDm={() => {
-          setFriendsOpen(false);
-          setDmInboxOpen(true);
-        }}
-      />
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
