@@ -34,6 +34,7 @@ interface MessageDTO {
   createdAt: string;
   editedAt: string | null;
   deletedAt: string | null;
+  mentions?: string[];
 }
 
 function toDTO(m: {
@@ -45,6 +46,7 @@ function toDTO(m: {
   createdAt: Date;
   editedAt: Date | null;
   deletedAt: Date | null;
+  mentions: string | null;
   author: { displayName: string };
 }): MessageDTO {
   // Room messages may be wrapped at rest with the server master key. DMs are
@@ -71,6 +73,7 @@ function toDTO(m: {
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt?.toISOString() ?? null,
     deletedAt: m.deletedAt?.toISOString() ?? null,
+    mentions: m.mentions ? JSON.parse(m.mentions) as string[] : undefined,
   };
 }
 
@@ -151,12 +154,53 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.auth!.userId;
       await assertThreadAccess(threadType, threadId, userId);
 
+      // Resolve @handle tokens against the thread's participant set. Strict
+      // regex requires a non-word character (or string start) before the @ so
+      // we don't pick up email addresses or mid-token strings.
+      const handleTokens: string[] = [];
+      {
+        const re = /(?:^|[^A-Za-z0-9_])@([A-Za-z0-9_]{3,24})\b/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(body)) !== null) {
+          handleTokens.push(m[1]!.toLowerCase());
+        }
+      }
+
+      let mentionedUserIds: string[] = [];
+      if (handleTokens.length > 0) {
+        let participantIds: string[];
+        if (threadType === "room") {
+          const memberships = await prisma.roomMembership.findMany({
+            where: { roomId: threadId },
+            select: { userId: true },
+          });
+          const room = await prisma.room.findUnique({
+            where: { id: threadId },
+            select: { ownerId: true },
+          });
+          participantIds = [...memberships.map((m) => m.userId)];
+          if (room?.ownerId) participantIds.push(room.ownerId);
+        } else {
+          const [a, b] = threadId.split(":");
+          participantIds = [a!, b!];
+        }
+        const candidates = await prisma.user.findMany({
+          where: {
+            id: { in: participantIds },
+            handleLower: { in: handleTokens },
+          },
+          select: { id: true },
+        });
+        mentionedUserIds = candidates.map((c) => c.id);
+      }
+
       const created = await prisma.message.create({
         data: {
           threadType,
           threadId,
           authorId: userId,
           body: bodyForStorage(threadType, body),
+          mentions: mentionedUserIds.length > 0 ? JSON.stringify(mentionedUserIds) : null,
         },
         include: { author: { select: { displayName: true } } },
       });
