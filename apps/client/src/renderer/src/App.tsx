@@ -1,12 +1,14 @@
 import { useEffect, type ReactElement } from "react";
-import { AuthProvider, useAuthStore } from "./lib/auth-context.js";
+import { AuthProvider, useAuthStore, useNeedsHandle } from "./lib/auth-context.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
+import { HandlePickGate } from "./components/HandlePickGate.js";
 import { prefsActions } from "./lib/prefs-singleton.js";
 import { WindowChrome, Spinner } from "./components/Primitives.js";
 
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
+  const needsHandle = useNeedsHandle();
 
   if (status === "loading") {
     return (
@@ -27,6 +29,9 @@ function Router(): ReactElement {
     );
   }
   if (status === "authenticated") {
+    if (needsHandle) {
+      return <HandlePickGate />;
+    }
     return <LobbyScreen />;
   }
   return <LoginScreen />;
