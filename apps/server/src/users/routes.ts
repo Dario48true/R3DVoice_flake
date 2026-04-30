@@ -35,6 +35,45 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  const updateMeSchema = z.object({
+    avatarUrl: z
+      .string()
+      .url()
+      .max(2048)
+      .startsWith("https://")
+      .nullable()
+      .optional(),
+  });
+
+  app.patch("/me", { preHandler: requireAuth }, async (request) => {
+    const parsed = updateMeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? "invalid input");
+    }
+    const userId = request.auth!.userId;
+
+    const data: { avatarUrl?: string | null } = {};
+    if (parsed.data.avatarUrl !== undefined) {
+      data.avatarUrl = parsed.data.avatarUrl;
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      handle: user.handle ?? null,
+      avatarUrl: user.avatarUrl ?? null,
+      dndUntil: user.dndUntil?.toISOString() ?? null,
+      totpEnabled: user.totpEnabledAt !== null,
+      hasE2eeKey: user.e2eePublicKey !== null,
+    };
+  });
+
   app.get<{ Params: { handle: string } }>(
     "/users/by-handle/:handle",
     { preHandler: requireAuth },
