@@ -64,7 +64,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       );
       reply.status(201).send({
         token,
-        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null },
+        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
       });
     },
   );
@@ -102,7 +102,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     );
     reply.status(200).send({
       token,
-      user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null },
+      user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
     });
   });
 
@@ -135,7 +135,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       );
       reply.status(200).send({
         token,
-        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null },
+        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
       });
     },
   );
@@ -148,6 +148,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       email: user.email,
       displayName: user.displayName,
       handle: user.handle ?? null,
+      dndUntil: user.dndUntil?.toISOString() ?? null,
       totpEnabled: user.totpEnabledAt !== null,
       hasE2eeKey: user.e2eePublicKey !== null,
     };

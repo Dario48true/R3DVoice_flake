@@ -6,6 +6,7 @@ import { DmThreadList } from "../components/DmThreadList.js";
 import { FriendsPane } from "../components/FriendsPane.js";
 import { NewDmPicker } from "../components/NewDmPicker.js";
 import { RoomChatPanel } from "../components/RoomChatPanel.js";
+import { ThreadHeader } from "../components/ThreadHeader.js";
 import { I } from "../components/Icons.js";
 import { useUnreadStore } from "../lib/unread-store.js";
 
@@ -58,6 +59,11 @@ export function DmsScreen(): ReactElement {
     setActivePeer(peer);
     void refresh();
   }, [refresh]);
+
+  // TODO(Plan 4): wire to unified navigation when room-join is centralised.
+  const handleJoinRoom = useCallback((_roomId: string) => {
+    void _roomId; // no-op until navigation is unified
+  }, []);
 
   if (!me) return <div />;
 
@@ -112,29 +118,19 @@ export function DmsScreen(): ReactElement {
           >
             Friends {friendsOpen ? "▾" : "▸"}
           </button>
-          {friendsOpen && <FriendsPane />}
+          {friendsOpen && <FriendsPane onJoinRoom={handleJoinRoom} />}
         </div>
       </aside>
 
       <main style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
         {active && activePeer ? (
           <>
-            <header
-              style={{
-                padding: "var(--s-3) var(--s-5)",
-                borderBottom: "1px solid var(--border-soft)",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--s-3)",
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>
-                {activePeer.handle ? `@${activePeer.handle}` : activePeer.displayName}
-              </span>
-              {activePeer.handle && (
-                <span style={{ color: "var(--text-faint)", fontSize: "var(--t-sm)" }}>{activePeer.displayName}</span>
-              )}
-            </header>
+            <ThreadHeader
+              threadType="dm"
+              threadId={active}
+              title={activePeer.handle ? `@${activePeer.handle}` : activePeer.displayName}
+              subtitle={activePeer.handle ? activePeer.displayName : undefined}
+            />
             <div style={{ flex: 1, minHeight: 0 }}>
               <RoomChatPanel
                 threadType="dm"
@@ -142,6 +138,11 @@ export function DmsScreen(): ReactElement {
                 localIdentity={me.id}
                 localName={me.displayName}
                 onClose={() => setActive(null)}
+                mentionCandidates={activePeer.handle ? [{
+                  id: activePeer.id,
+                  handle: activePeer.handle,
+                  displayName: activePeer.displayName,
+                }] : []}
               />
             </div>
           </>

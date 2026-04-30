@@ -1,5 +1,6 @@
 import { type ReactElement } from "react";
 import { I } from "./Icons.js";
+import { DndToggle } from "./DndToggle.js";
 
 type Props = {
   open: boolean;
@@ -40,6 +41,8 @@ export function UserPanelPopover({ open, onClose, displayName, handle, onOpenSet
           <div style={{ fontWeight: 600 }}>{displayName}</div>
           {handle && <div style={{ color: "var(--text-faint)", fontSize: "var(--t-sm)" }}>@{handle}</div>}
         </div>
+        <hr className="rv-rule" />
+        <DndToggle />
         <hr className="rv-rule" />
         <button
           type="button"

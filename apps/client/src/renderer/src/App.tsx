@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { AuthProvider, useAuthStore, useNeedsHandle } from "./lib/auth-context.js";
+import { setCurrentUserForNotifications } from "./lib/chat-transport.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { HandlePickGate } from "./components/HandlePickGate.js";
@@ -12,6 +13,11 @@ import { SettingsModal } from "./components/SettingsModal.js";
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
   const needsHandle = useNeedsHandle();
+  const user = useAuthStore((s) => s.user);
+
+  useEffect(() => {
+    setCurrentUserForNotifications(user ?? null);
+  }, [user]);
 
   const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(() => {
     try {

@@ -1032,6 +1032,12 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
   const micPipelineRef = useRef<MicPipeline | null>(null);
 
   useEffect(() => {
+    const api = new ApiClient(serverUrl); api.setToken(token);
+    void api.setPresence(props.roomId);
+    return () => { void api.setPresence(null); };
+  }, [props.roomId, serverUrl, token]);
+
+  useEffect(() => {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, []);

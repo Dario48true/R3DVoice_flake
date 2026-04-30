@@ -6,7 +6,11 @@ import { I } from "./Icons.js";
 import { InviteCreateModal } from "./InviteCreateModal.js";
 import { MyInvitesList } from "./MyInvitesList.js";
 
-export function FriendsPane(): ReactElement {
+type Props = {
+  onJoinRoom?: (roomId: string) => void;
+};
+
+export function FriendsPane({ onJoinRoom }: Props = {}): ReactElement {
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const token = useAuthStore((s) => s.token);
   const [friends, setFriends] = useState<FriendDTO[]>([]);
@@ -116,8 +120,23 @@ export function FriendsPane(): ReactElement {
               <span style={{
                 width: 8, height: 8, borderRadius: "50%",
                 background: f.isOnline ? "var(--rv-live)" : "var(--text-faint)",
+                flexShrink: 0,
               }} />
-              <span style={{ flex: 1 }}>{f.user.displayName}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div>{f.user.displayName}{f.user.handle && <span style={{ color: "var(--text-faint)", fontSize: "var(--t-xs)" }}> @{f.user.handle}</span>}</div>
+                {f.user.currentRoom && (
+                  <button
+                    type="button"
+                    onClick={() => onJoinRoom?.(f.user.currentRoom!.id)}
+                    style={{
+                      background: "transparent", border: 0, padding: 0, cursor: "pointer",
+                      color: "var(--accent)", fontSize: "var(--t-xs)", textDecoration: "underline",
+                    }}
+                  >
+                    in {f.user.currentRoom.name} →
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </section>
