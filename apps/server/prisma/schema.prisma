@@ -28,6 +28,7 @@ model User {
   handle      String?
   handleLower String?  @unique
   dndUntil    DateTime?
+  avatarUrl   String?
   currentRoomId   String?
   currentRoom     Room?    @relation("UserCurrentRoom", fields: [currentRoomId], references: [id], onDelete: SetNull)
 
