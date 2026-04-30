@@ -55,6 +55,17 @@ const bridge: RedVoiceBridge = {
   enableLinuxAudioRouting: (options) => ipcRenderer.invoke("linux-audio-routing:enable", options),
   disableLinuxAudioRouting: () => ipcRenderer.invoke("linux-audio-routing:disable"),
   listLinuxAudioSources: () => ipcRenderer.invoke("linux-audio-routing:list-sources"),
+  onInviteCode: (cb) => {
+    const handler = (_evt: Electron.IpcRendererEvent, link: DeepLinkEvent): void => {
+      if (link.type === "invite-code") cb(link.code);
+    };
+    ipcRenderer.on("deep-link", handler);
+    // Replay any pending deep link queued before we subscribed (cold-start case).
+    void ipcRenderer.invoke("deep-link:consume-pending").then((link: DeepLinkEvent | null) => {
+      if (link && link.type === "invite-code") cb(link.code);
+    });
+    return () => ipcRenderer.off("deep-link", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("redvoice", bridge);

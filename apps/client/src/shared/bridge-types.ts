@@ -94,6 +94,11 @@ export interface RedVoiceBridge {
   disableLinuxAudioRouting(): Promise<void>;
   /** Linux-only: list audio-producing apps for the share-audio source picker. */
   listLinuxAudioSources(): Promise<LinuxAudioSourceSummary[]>;
+  /**
+   * Subscribe to invite deep-link events (redvoice://invite/<code>).
+   * Returns an unsubscribe function.
+   */
+  onInviteCode(cb: (code: string) => void): () => void;
 }
 
 export interface LinuxAudioSourceSummary {
@@ -115,4 +120,6 @@ export interface SystemAudioFormat {
   bitsPerSample: number;
 }
 
-export type DeepLinkEvent = { type: "join-room"; roomId: string };
+export type DeepLinkEvent =
+  | { type: "join-room"; roomId: string }
+  | { type: "invite-code"; code: string };

@@ -1,4 +1,4 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { AuthProvider, useAuthStore, useNeedsHandle } from "./lib/auth-context.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
@@ -9,6 +9,21 @@ import { WindowChrome, Spinner } from "./components/Primitives.js";
 function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
   const needsHandle = useNeedsHandle();
+
+  const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(() => {
+    try {
+      const u = new URL(window.location.href);
+      return u.searchParams.get("invite");
+    } catch {
+      return null;
+    }
+  });
+
+  // Listen for invite deep links from the main process.
+  useEffect(() => {
+    const off = window.redvoice.onInviteCode((code: string) => setPendingInviteCode(code));
+    return off;
+  }, []);
 
   if (status === "loading") {
     return (
@@ -32,7 +47,22 @@ function Router(): ReactElement {
     if (needsHandle) {
       return <HandlePickGate />;
     }
-    return <LobbyScreen />;
+    return (
+      <LobbyScreen
+        pendingInviteCode={pendingInviteCode}
+        onInviteCodeConsumed={() => {
+          setPendingInviteCode(null);
+          try {
+            const u = new URL(window.location.href);
+            u.searchParams.delete("invite");
+            window.history.replaceState({}, "", u.toString());
+          } catch {
+            // ignore
+          }
+        }}
+        onInviteCode={(code) => setPendingInviteCode(code)}
+      />
+    );
   }
   return <LoginScreen />;
 }

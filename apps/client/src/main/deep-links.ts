@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import type { DeepLinkEvent } from "../shared/bridge-types.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INVITE_CODE_RE = /^[A-Za-z2-9]{8}$/;
 
 let pending: DeepLinkEvent | null = null;
 
@@ -20,6 +21,13 @@ export function parseDeepLink(raw: string): DeepLinkEvent | null {
     const id = url.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
     if (UUID_RE.test(id)) return { type: "join-room", roomId: id };
   }
+
+  // redvoice://invite/<code> — `host` is "invite", pathname is "/<code>"
+  if (url.host === "invite") {
+    const code = url.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (INVITE_CODE_RE.test(code)) return { type: "invite-code", code };
+  }
+
   return null;
 }
 

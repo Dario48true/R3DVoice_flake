@@ -16,6 +16,20 @@ export interface RoomsState {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INVITE_CODE_RE = /^[A-Za-z2-9]{8}$/;
+
+export function extractInviteCode(input: string): string | null {
+  const t = input.trim();
+  if (INVITE_CODE_RE.test(t)) return t;
+  try {
+    const u = new URL(t);
+    const m = u.pathname.match(/\/invite\/([A-Za-z2-9]{8})/);
+    if (m && m[1]) return m[1];
+  } catch {
+    // Not a URL
+  }
+  return null;
+}
 
 function extractRoomId(input: string): string | null {
   const trimmed = input.trim();

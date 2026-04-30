@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type ReactElement } from "react";
 import { ApiClient } from "../lib/api.js";
-import { createRoomsStore, type RoomsState } from "../lib/rooms-store.js";
+import { createRoomsStore, extractInviteCode, type RoomsState } from "../lib/rooms-store.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { FeaturesPanel } from "../components/FeaturesPanel.js";
 import { DmInboxModal } from "../components/DmInboxModal.js";
@@ -11,6 +11,7 @@ import { Spinner } from "../components/Primitives.js";
 import { MOD_KEY } from "../lib/platform.js";
 import { InRoomScreen } from "./InRoomScreen.js";
 import { PreJoinScreen, type PreJoinSelection } from "./PreJoinScreen.js";
+import { InvitePreviewScreen } from "./InvitePreviewScreen.js";
 
 function useRoomsStore<T>(store: ReturnType<typeof createRoomsStore>, selector: (s: RoomsState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()), () => selector(store.getState()));
@@ -18,6 +19,7 @@ function useRoomsStore<T>(store: ReturnType<typeof createRoomsStore>, selector: 
 
 type Phase =
   | { kind: "lobby" }
+  | { kind: "invite"; code: string }
   | { kind: "prejoin"; roomId: string }
   | { kind: "inroom"; roomId: string; selection: PreJoinSelection };
 
@@ -95,7 +97,13 @@ function Stat({
   );
 }
 
-export function LobbyScreen(): ReactElement {
+interface LobbyScreenProps {
+  pendingInviteCode?: string | null;
+  onInviteCodeConsumed?: () => void;
+  onInviteCode?: (code: string) => void;
+}
+
+export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteCode }: LobbyScreenProps = {}): ReactElement {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const token = useAuthStore((s) => s.token);
@@ -122,6 +130,13 @@ export function LobbyScreen(): ReactElement {
   useEffect(() => {
     void store.getState().refresh();
   }, [store]);
+
+  // Transition to invite phase when a pending invite code arrives from App.tsx.
+  useEffect(() => {
+    if (pendingInviteCode && phase.kind === "lobby") {
+      setPhase({ kind: "invite", code: pendingInviteCode });
+    }
+  }, [pendingInviteCode, phase.kind]);
 
   useEffect(() => {
     if (activeRoomId && phase.kind === "lobby") {
@@ -179,7 +194,38 @@ export function LobbyScreen(): ReactElement {
   async function onJoin(e: FormEvent): Promise<void> {
     e.preventDefault();
     if (!joinInput.trim()) return;
+    const inviteCode = extractInviteCode(joinInput);
+    if (inviteCode) {
+      if (onInviteCode) {
+        onInviteCode(inviteCode);
+      } else {
+        setPhase({ kind: "invite", code: inviteCode });
+      }
+      return;
+    }
     await store.getState().join(joinInput.trim());
+  }
+
+  if (phase.kind === "invite") {
+    return (
+      <InvitePreviewScreen
+        code={phase.code}
+        onRedirect={(redirectTo) => {
+          onInviteCodeConsumed?.();
+          if (redirectTo.startsWith("/rooms/")) {
+            const roomId = redirectTo.replace(/^\/rooms\//, "");
+            void store.getState().join(roomId);
+          } else {
+            // /dms or unknown — return to lobby; DM page is not yet implemented.
+            setPhase({ kind: "lobby" });
+          }
+        }}
+        onCancel={() => {
+          onInviteCodeConsumed?.();
+          setPhase({ kind: "lobby" });
+        }}
+      />
+    );
   }
 
   if (phase.kind === "prejoin") {
