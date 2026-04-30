@@ -22,12 +22,16 @@ model User {
   // because legacy accounts created before E2EE shipped won't have one.
   e2eePublicKey String?
 
+  handle   String?
+  dndUntil DateTime?
+
   sessions      Session[]
   ownedRooms    Room[]           @relation("RoomOwner")
   memberships   RoomMembership[]
   messages      Message[]
   friendshipsRequested  Friendship[] @relation("FriendshipRequester")
   friendshipsReceived   Friendship[] @relation("FriendshipRecipient")
+  invites       Invite[]
 }
 
 model Session {
@@ -54,6 +58,7 @@ model Room {
 
   owner       User             @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   memberships RoomMembership[]
+  invites     Invite[]
 
   @@index([ownerId])
 }
@@ -114,4 +119,22 @@ model Friendship {
   @@unique([requesterId, recipientId])
   @@index([recipientId, status])
   @@index([requesterId, status])
+}
+
+model Invite {
+  id           String    @id @default(uuid())
+  code         String    @unique
+  kind         String    // 'room' | 'friend' — enforced in app layer (zod)
+  creatorId    String
+  creator      User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  targetRoomId String?
+  targetRoom   Room?     @relation(fields: [targetRoomId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime?
+  maxUses      Int?
+  uses         Int       @default(0)
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([code])
+  @@index([creatorId])
 }
