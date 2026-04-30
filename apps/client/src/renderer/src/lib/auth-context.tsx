@@ -35,3 +35,7 @@ export function useAuthStore<T>(selector: (s: AuthState) => T): T {
     () => selector(store.getState()),
   );
 }
+
+export function useNeedsHandle(): boolean {
+  return useAuthStore((s) => s.user !== null && (s.user.handle === null || s.user.handle === undefined));
+}

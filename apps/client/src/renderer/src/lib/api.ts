@@ -200,6 +200,44 @@ export class ApiClient {
     return this.request("POST", `/friends/${encodeURIComponent(friendshipId)}/reject`);
   }
 
+  // Handle
+  setMyHandle(handle: string): Promise<{ id: string; handle: string; displayName: string; email: string }> {
+    return this.request("POST", "/me/handle", { handle });
+  }
+
+  getUserByHandle(handle: string): Promise<{ id: string; handle: string; displayName: string }> {
+    return this.request("GET", `/users/by-handle/${encodeURIComponent(handle)}`);
+  }
+
+  friendRequestByHandle(handle: string): Promise<{ friendshipId: string; status: string; user: { id: string; handle: string | null; displayName: string } }> {
+    return this.request("POST", "/friends/request-by-handle", { handle });
+  }
+
+  // Invites
+  createInvite(input: { kind: "room" | "friend"; targetRoomId?: string; expiresAt?: string | null; maxUses?: number | null }): Promise<unknown> {
+    return this.request("POST", "/invites", input);
+  }
+
+  listMyInvites(): Promise<unknown> {
+    return this.request("GET", "/invites");
+  }
+
+  async revokeInvite(id: string): Promise<void> {
+    await this.request("DELETE", `/invites/${encodeURIComponent(id)}`);
+  }
+
+  getInvitePublic(code: string): Promise<unknown> {
+    return this.request("GET", `/invites/${encodeURIComponent(code)}`);
+  }
+
+  getInviteFull(code: string): Promise<unknown> {
+    return this.request("GET", `/invites/${encodeURIComponent(code)}/full`);
+  }
+
+  redeemInvite(code: string): Promise<{ kind: "room" | "friend"; redirectTo: string }> {
+    return this.request("POST", `/invites/${encodeURIComponent(code)}/redeem`);
+  }
+
   // Internal helper for HTTP methods beyond GET/POST.
   private async requestWithMethod<TBody, TRes>(
     method: "PATCH" | "DELETE",

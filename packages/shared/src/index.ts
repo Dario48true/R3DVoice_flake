@@ -38,6 +38,7 @@ export interface UserDTO {
   id: string;
   email: string;
   displayName: string;
+  handle?: string | null;
   totpEnabled?: boolean;
 }
 
