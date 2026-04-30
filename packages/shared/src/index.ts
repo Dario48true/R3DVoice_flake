@@ -40,6 +40,7 @@ export interface UserDTO {
   displayName: string;
   handle?: string | null;
   totpEnabled?: boolean;
+  dndUntil?: string | null;
 }
 
 // Room DTOs
@@ -105,6 +106,7 @@ export interface ChatMessageDTO {
   createdAt: string; // ISO 8601
   editedAt: string | null;
   deletedAt: string | null;
+  mentions?: string[];
 }
 
 export interface ChatHistoryResponse {
@@ -143,7 +145,12 @@ export type ChatWsEvent =
   | { type: "edited"; message: ChatMessageDTO }
   | { type: "deleted"; id: string; threadType: ChatThreadType; threadId: string }
   | { type: "pong" }
-  | { type: "error"; code: string; threadId?: string };
+  | { type: "error"; code: string; threadId?: string }
+  | { type: "chat.mention"; message: ChatMessageDTO }
+  | { type: "friend.request"; from: { id: string; handle: string | null; displayName: string } }
+  | { type: "friend.accepted"; by: { id: string; handle: string | null; displayName: string } }
+  | { type: "invite.redeemed"; code: string; by: { id: string; handle: string | null; displayName: string }; kind: InviteKind; targetRoomId: string | null }
+  | { type: "presence.update"; userId: string; currentRoom: { id: string; name: string } | null };
 
 /** Client → server WebSocket frames. */
 export type ChatWsCommand =
@@ -157,7 +164,14 @@ export type FriendStatus = "pending-incoming" | "pending-outgoing" | "accepted" 
 export interface FriendDTO {
   friendshipId: string;
   status: FriendStatus;
-  user: { id: string; displayName: string; email: string };
+  user: {
+    id: string;
+    displayName: string;
+    email: string;
+    handle?: string | null;
+    /** Where this friend is hanging out right now, if anywhere. */
+    currentRoom?: { id: string; name: string } | null;
+  };
   isOnline: boolean;
   requestedAt: string;
   respondedAt: string | null;
@@ -241,4 +255,42 @@ export interface InviteFullMetadataDTO extends InvitePublicMetadataDTO {
 export interface InviteRedeemResultDTO {
   kind: InviteKind;
   redirectTo: string; // e.g. "/rooms/<id>" or "/dms"
+}
+
+// Notification + presence DTOs
+
+export type MuteLevel = "all" | "mentions" | "none";
+
+export const muteLevelSchema = z.enum(["all", "mentions", "none"]);
+
+export const setMuteSchema = z.object({
+  level: muteLevelSchema,
+  mutedUntil: z.string().datetime().nullable().optional(),
+});
+
+export const markReadSchema = z.object({
+  threadType: z.enum(["room", "dm"]),
+  threadId: z.string().min(1),
+  lastReadAt: z.string().datetime().optional(),
+});
+
+export const setDndSchema = z.object({
+  until: z.string().datetime().nullable().optional(),
+});
+
+export const setPresenceSchema = z.object({
+  roomId: z.string().nullable(),
+});
+
+export interface UnreadCountsResponse {
+  /** Map keyed by `${threadType}:${threadId}` → count of unread messages. */
+  counts: Record<string, number>;
+  totalUnread: number;
+}
+
+export interface ThreadMuteDTO {
+  threadType: ChatThreadType;
+  threadId: string;
+  level: MuteLevel;
+  mutedUntil: string | null;
 }
