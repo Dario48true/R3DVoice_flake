@@ -10,6 +10,7 @@ import { friendsRoutes } from "./friends/routes.js";
 import { landingRoutes } from "./landing.js";
 import { userRoutes } from "./users/routes.js";
 import { inviteRoutes } from "./invites/routes.js";
+import { notificationRoutes } from "./notifications/routes.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -40,6 +41,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(friendsRoutes);
   await app.register(userRoutes);
   await app.register(inviteRoutes);
+  await app.register(notificationRoutes);
 
   return app;
 }
