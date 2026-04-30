@@ -112,6 +112,26 @@ describe("ApiClient", () => {
       }),
     );
   });
+
+  it("dmThreads decodes otherParticipant correctly", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({
+        threads: [{
+          threadId: "aaa:bbb",
+          lastMessage: {
+            id: "m1", threadType: "dm", threadId: "aaa:bbb",
+            authorId: "aaa", authorName: "Alice", body: "hi",
+            createdAt: "2026-04-30T00:00:00Z", editedAt: null, deletedAt: null,
+          },
+          otherParticipant: { id: "bbb", handle: "bob", displayName: "Bob" },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const api = new ApiClient(BASE);
+    api.setToken("tok");
+    const r = await api.dmThreads();
+    expect(r.threads[0]!.otherParticipant).toMatchObject({ id: "bbb", handle: "bob" });
+  });
 });
 
 describe("extractInviteCode", () => {
