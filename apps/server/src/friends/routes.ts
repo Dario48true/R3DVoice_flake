@@ -5,6 +5,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../auth/middleware.js";
 import { AuthError, ConflictError, NotFoundError, ValidationError } from "../errors.js";
 import { isUserOnline } from "../chat/ws-state.js";
+import { userHandleSchema } from "@redvoice/shared";
 
 const sendBodySchema = z.object({ email: z.string().email() });
 const respondParamsSchema = z.object({ id: z.string().min(1) });
@@ -101,6 +102,59 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
             recipientId: recipient.id,
             status: "pending",
           },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          throw new ConflictError("request already pending");
+        }
+        throw err;
+      }
+      reply.status(201).send({
+        friendshipId: row.id,
+        status: "pending-outgoing" as const,
+        user: recipient,
+      });
+    },
+  );
+
+  const sendByHandleSchema = z.object({ handle: userHandleSchema });
+
+  app.post(
+    "/friends/request-by-handle",
+    {
+      preHandler: requireAuth,
+      config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+    },
+    async (request, reply) => {
+      const parsed = sendByHandleSchema.safeParse(request.body);
+      if (!parsed.success) throw new ValidationError("invalid handle");
+      const userId = request.auth!.userId;
+
+      const recipient = await prisma.user.findFirst({
+        where: { handle: parsed.data.handle.toLowerCase() },
+        select: { id: true, displayName: true, email: true, handle: true },
+      });
+      if (!recipient) throw new NotFoundError("no user with that handle");
+      if (recipient.id === userId) throw new ValidationError("cannot friend yourself");
+
+      const existing = await prisma.friendship.findFirst({
+        where: {
+          OR: [
+            { requesterId: userId, recipientId: recipient.id },
+            { requesterId: recipient.id, recipientId: userId },
+          ],
+        },
+      });
+      if (existing) {
+        if (existing.status === "blocked") throw new ConflictError("blocked");
+        if (existing.status === "accepted") throw new ConflictError("already friends");
+        if (existing.status === "pending") throw new ConflictError("request already pending");
+      }
+
+      let row;
+      try {
+        row = await prisma.friendship.create({
+          data: { requesterId: userId, recipientId: recipient.id, status: "pending" },
         });
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
