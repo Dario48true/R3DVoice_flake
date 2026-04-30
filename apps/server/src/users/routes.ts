@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { userHandleSchema } from "@redvoice/shared";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { Prisma } from "@prisma/client";
 import { requireAuth } from "../auth/middleware.js";
 import { ConflictError, NotFoundError, ValidationError } from "../errors.js";
 
@@ -17,18 +18,19 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const me = await prisma.user.findUnique({ where: { id: userId }, select: { handle: true } });
     if (me?.handle != null) throw new ConflictError("handle already set", "HANDLE_ALREADY_SET");
 
-    const handle = parsed.data.handle;
-
-    // Check for collision manually (no unique index on handle in the schema).
-    const existing = await prisma.user.findFirst({ where: { handle } });
-    if (existing) throw new ConflictError("handle taken", "HANDLE_TAKEN");
-
-    const updated = await prisma.user.update({
-      where: { id: userId },
-      data: { handle },
-      select: { id: true, handle: true, displayName: true, email: true },
-    });
-    return updated;
+    try {
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { handle: parsed.data.handle },
+        select: { id: true, handle: true, displayName: true, email: true },
+      });
+      return updated;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictError("handle taken", "HANDLE_TAKEN");
+      }
+      throw err;
+    }
   });
 
   app.get<{ Params: { handle: string } }>(

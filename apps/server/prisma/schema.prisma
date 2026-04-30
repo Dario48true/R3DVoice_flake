@@ -22,7 +22,7 @@ model User {
   // because legacy accounts created before E2EE shipped won't have one.
   e2eePublicKey String?
 
-  handle   String?
+  handle   String?  @unique
   dndUntil DateTime?
 
   sessions      Session[]
