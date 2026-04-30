@@ -15,9 +15,6 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? "invalid handle");
     const userId = request.auth!.userId;
 
-    const me = await prisma.user.findUnique({ where: { id: userId }, select: { handle: true } });
-    if (me?.handle != null) throw new ConflictError("handle already set", "HANDLE_ALREADY_SET");
-
     // Store the user-typed casing for display, plus the canonical lowercase
     // form on which the unique constraint lives. @Red and @red collide.
     const handle = parsed.data.handle;

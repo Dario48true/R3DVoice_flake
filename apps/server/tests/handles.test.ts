@@ -20,13 +20,13 @@ describe("handles", () => {
     expect(res.json()).toMatchObject({ handle: "alpha" });
   });
 
-  it("POST /me/handle rejects double-set", async () => {
+  it("POST /me/handle allows updating an existing handle", async () => {
     const app = await buildApp();
     const { token } = await registerUser(app, { email: "a@x.com" });
     await app.inject({ method: "POST", url: "/me/handle", headers: authHeader(token), payload: { handle: "alpha" } });
     const res = await app.inject({ method: "POST", url: "/me/handle", headers: authHeader(token), payload: { handle: "beta" } });
-    expect(res.statusCode).toBe(409);
-    expect(res.json()).toMatchObject({ error: { code: "HANDLE_ALREADY_SET" } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ handle: "beta" });
   });
 
   it("POST /me/handle rejects invalid format", async () => {

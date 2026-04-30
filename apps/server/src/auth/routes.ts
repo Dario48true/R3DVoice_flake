@@ -9,6 +9,7 @@ import { requireAuth } from "./middleware.js";
 import { AuthError, ConflictError, ValidationError } from "../errors.js";
 import { buildOtpAuthUrl, buildQrDataUrl, generateTotpSecret, verifyTotpCode } from "./totp.js";
 import { wrapAtRest, unwrapAtRest } from "../crypto-at-rest.js";
+import { generateUniqueHandle } from "./handle-generator.js";
 
 const registerBodySchema = z.object({
   email: z.string().email(),
@@ -40,6 +41,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }
       const { email, password, displayName, e2eePublicKey } = parsed.data;
       const passwordHash = await hashPassword(password);
+      const handle = await generateUniqueHandle(displayName);
+      const handleLower = handle.toLowerCase();
       let user;
       try {
         user = await prisma.user.create({
@@ -47,6 +50,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             email,
             displayName,
             passwordHash,
+            handle,
+            handleLower,
             ...(e2eePublicKey && { e2eePublicKey }),
           },
         });
@@ -64,7 +69,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       );
       reply.status(201).send({
         token,
-        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
+        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, avatarUrl: user.avatarUrl ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
       });
     },
   );
@@ -102,7 +107,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     );
     reply.status(200).send({
       token,
-      user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
+      user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, avatarUrl: user.avatarUrl ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
     });
   });
 
@@ -135,7 +140,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       );
       reply.status(200).send({
         token,
-        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
+        user: { id: user.id, email: user.email, displayName: user.displayName, handle: user.handle ?? null, avatarUrl: user.avatarUrl ?? null, dndUntil: user.dndUntil?.toISOString() ?? null },
       });
     },
   );
@@ -148,6 +153,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       email: user.email,
       displayName: user.displayName,
       handle: user.handle ?? null,
+      avatarUrl: user.avatarUrl ?? null,
       dndUntil: user.dndUntil?.toISOString() ?? null,
       totpEnabled: user.totpEnabledAt !== null,
       hasE2eeKey: user.e2eePublicKey !== null,

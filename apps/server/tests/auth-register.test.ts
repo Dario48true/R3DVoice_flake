@@ -12,18 +12,19 @@ describe("POST /auth/register", () => {
     await disconnectDb();
   });
 
-  it("creates a user and returns a session token", async () => {
+  it("creates a user and returns a session token with auto-generated handle", async () => {
     app = await makeTestApp();
     const res = await app.inject({
       method: "POST",
       url: "/auth/register",
-      payload: { email: "a@b.com", password: "longenough-pw-123", displayName: "alice" },
+      payload: { email: "a@b.com", password: "longenough-pw-123", displayName: "Alice" },
     });
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body.token).toEqual(expect.any(String));
     expect(body.user.email).toBe("a@b.com");
-    expect(body.user.displayName).toBe("alice");
+    expect(body.user.displayName).toBe("Alice");
+    expect(body.user.handle).toBe("alice");
     expect(body.user.id).toEqual(expect.any(String));
   });
 
@@ -65,5 +66,21 @@ describe("POST /auth/register", () => {
       payload: { email: "a@b.com", password: "longenough-pw-123" },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("auto-generates a colliding handle with _2 suffix", async () => {
+    app = await makeTestApp();
+    await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "a@b.com", password: "longenough-pw-123", displayName: "Alice" },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "a2@b.com", password: "longenough-pw-123", displayName: "Alice" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().user.handle).toBe("alice_2");
   });
 });
