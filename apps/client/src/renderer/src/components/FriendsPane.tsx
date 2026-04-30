@@ -3,6 +3,7 @@ import type { FriendDTO } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
 import { getTransport } from "../lib/chat-transport.js";
+import { Avatar } from "./Avatar.js";
 import { I } from "./Icons.js";
 import { InviteCreateModal } from "./InviteCreateModal.js";
 import { MyInvitesList } from "./MyInvitesList.js";
@@ -135,6 +136,12 @@ export function FriendsPane({ onJoinRoom }: Props = {}): ReactElement {
           <div className="rv-label" style={{ marginBottom: "var(--s-2)" }}>Friends ({accepted.length})</div>
           {accepted.map((f) => (
             <div key={f.friendshipId} style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", padding: "var(--s-2) 0", fontSize: "var(--t-sm)" }}>
+              <Avatar
+                src={f.user.avatarUrl ?? null}
+                fallbackInitials={f.user.displayName}
+                fallbackColorSeed={f.user.id}
+                size={32}
+              />
               <span style={{
                 width: 8, height: 8, borderRadius: "50%",
                 background: f.isOnline ? "var(--rv-live)" : "var(--text-faint)",

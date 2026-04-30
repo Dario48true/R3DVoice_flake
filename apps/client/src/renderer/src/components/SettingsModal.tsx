@@ -11,6 +11,7 @@ import type { MediaPermissionStatus } from "../../../shared/bridge-types.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
 import { downloadKeyBackup, loadKeyPair } from "../lib/key-storage.js";
+import { Avatar } from "./Avatar.js";
 import { I } from "./Icons.js";
 import { Modal } from "./Modal.js";
 import { Field } from "./Primitives.js";
@@ -900,9 +901,12 @@ function AccountTab({ onClose }: { onClose: () => void }): ReactElement {
           borderRadius: "var(--r-md)",
         }}
       >
-        <span className="rv-avatar" data-tone="1" data-size="lg">
-          {(user?.displayName ?? "?").charAt(0).toUpperCase()}
-        </span>
+        <Avatar
+          src={user?.avatarUrl ?? null}
+          fallbackInitials={user?.displayName ?? ""}
+          fallbackColorSeed={user?.id ?? ""}
+          size={48}
+        />
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span style={{ fontWeight: 500 }}>{user?.displayName ?? "(unknown)"}</span>
           <span

@@ -1,5 +1,6 @@
 import { type ReactElement } from "react";
 import type { DmThreadEntry } from "@redvoice/shared";
+import { Avatar } from "./Avatar.js";
 import { UnreadDot } from "./UnreadDot.js";
 import { useUnreadStore } from "../lib/unread-store.js";
 
@@ -43,13 +44,12 @@ export function DmThreadList({ threads, activeThreadId, onSelect }: Props): Reac
               border: active ? "1px solid var(--accent)" : "1px solid transparent",
             }}
           >
-            <span
-              className="rv-avatar"
-              data-tone={avatarTone(peer.id)}
-              style={{ width: 32, height: 32, fontSize: 13, flexShrink: 0 }}
-            >
-              {(peer.displayName.charAt(0) || "?").toUpperCase()}
-            </span>
+            <Avatar
+              src={null}
+              fallbackInitials={peer.displayName}
+              fallbackColorSeed={peer.id}
+              size={32}
+            />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
                 <span style={{ fontSize: "var(--t-sm)", fontWeight: (counts[`dm:${t.threadId}`] ?? 0) > 0 ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>

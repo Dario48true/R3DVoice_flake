@@ -24,6 +24,7 @@ import type { PreJoinSelection } from "./PreJoinScreen.js";
 import { SettingsModal } from "../components/SettingsModal.js";
 import { usePrefs, prefsActions } from "../lib/prefs-singleton.js";
 import type { LinuxAudioSourceSummary, WindowsAudioSessionInfo } from "../../../shared/bridge-types.js";
+import { Avatar } from "../components/Avatar.js";
 import { CopyLinkButton } from "../components/CopyLinkButton.js";
 import { RoomInfoPanel } from "../components/RoomInfoPanel.js";
 import { RoomE2EE } from "../lib/room-e2ee.js";
@@ -389,9 +390,12 @@ function Tile({
           }}
         />
       ) : (
-        <span className="rv-avatar" data-tone={toneOf(tile.id)} data-size={big ? "xl" : "lg"}>
-          {tile.name.charAt(0).toUpperCase() || "?"}
-        </span>
+        <Avatar
+          src={null}
+          fallbackInitials={tile.name}
+          fallbackColorSeed={tile.id}
+          size={big ? 72 : 48}
+        />
       )}
 
       {showCameraOverlay && (
@@ -1673,13 +1677,12 @@ export function InRoomScreen(props: InRoomScreenProps): ReactElement {
                   }}
                 >
                   <div style={{ position: "relative" }}>
-                    <span
-                      className="rv-avatar"
-                      data-tone={toneOf(tile.id)}
-                      style={{ width: 28, height: 28, fontSize: 11 }}
-                    >
-                      {tile.name.charAt(0).toUpperCase() || "?"}
-                    </span>
+                    <Avatar
+                      src={null}
+                      fallbackInitials={tile.name}
+                      fallbackColorSeed={tile.id}
+                      size={28}
+                    />
                     {tile.isSpeaking && (
                       <span className="rv-speaking-ring" style={{ inset: -2 }} />
                     )}

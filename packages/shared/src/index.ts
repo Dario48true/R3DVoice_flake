@@ -170,6 +170,7 @@ export interface FriendDTO {
     displayName: string;
     email: string;
     handle?: string | null;
+    avatarUrl?: string | null;
     /** Where this friend is hanging out right now, if anywhere. */
     currentRoom?: { id: string; name: string } | null;
   };

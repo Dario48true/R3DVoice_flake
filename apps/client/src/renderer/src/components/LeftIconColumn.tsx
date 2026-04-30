@@ -1,5 +1,6 @@
 import { useState, type ReactElement, type ReactNode } from "react";
 import { useAuthStore } from "../lib/auth-context.js";
+import { Avatar } from "./Avatar.js";
 import { I } from "./Icons.js";
 import { UserPanelPopover } from "./UserPanelPopover.js";
 import { UnreadDot } from "./UnreadDot.js";
@@ -94,16 +95,19 @@ export function LeftIconColumn({ active, onNavigate, onOpenSettings }: Props): R
             style={{
               width: 36, height: 36,
               borderRadius: "50%",
-              border: "1px solid var(--border)",
-              background: "var(--bg-elev)",
+              border: "none",
+              background: "transparent",
               cursor: "pointer",
               padding: 0,
               display: "grid", placeItems: "center",
-              fontWeight: 600,
-              color: "var(--text)",
             }}
           >
-            {(me.displayName?.charAt(0) ?? "?").toUpperCase()}
+            <Avatar
+              src={me.avatarUrl ?? null}
+              fallbackInitials={me.displayName ?? ""}
+              fallbackColorSeed={me.id}
+              size={36}
+            />
           </button>
           <UserPanelPopover
             open={userPanelOpen}
