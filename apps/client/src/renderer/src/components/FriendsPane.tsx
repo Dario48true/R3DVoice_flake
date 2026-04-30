@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { FriendDTO } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
+import { getTransport } from "../lib/chat-transport.js";
 import { I } from "./Icons.js";
 import { InviteCreateModal } from "./InviteCreateModal.js";
 import { MyInvitesList } from "./MyInvitesList.js";
@@ -29,6 +30,23 @@ export function FriendsPane({ onJoinRoom }: Props = {}): ReactElement {
   }, [apiFor]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Live updates: refresh on friend.request, friend.accepted, presence.update.
+  // Without this, you'd see an OS notification "@bob is now your friend"
+  // but the friend list would stay stale until you reload the page.
+  useEffect(() => {
+    const t = getTransport();
+    if (!t) return;
+    return t.on((event) => {
+      if (
+        event.type === "friend.request" ||
+        event.type === "friend.accepted" ||
+        event.type === "presence.update"
+      ) {
+        void refresh();
+      }
+    });
+  }, [refresh]);
 
   const sendRequest = async (): Promise<void> => {
     const raw = addInput.trim();

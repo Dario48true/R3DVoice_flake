@@ -2,6 +2,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { UserDTO } from "@redvoice/shared";
 import { ApiClient, ApiError } from "./api.js";
 import { ensureKeyPair, downloadKeyBackup, clearKeyPair } from "./key-storage.js";
+import { useUnreadStore } from "./unread-store.js";
 
 export interface AuthStorageAdapter {
   saveToken(token: string): Promise<void>;
@@ -122,6 +123,9 @@ export function createAuthStore(
     async logout() {
       const { token } = get();
       if (token) {
+        // Clear server-side presence BEFORE we drop the token, otherwise
+        // friends see us stuck "in <Room>" until our WS happens to drop.
+        try { await api.setPresence(null); } catch { /* best-effort */ }
         try {
           await api.logout();
         } catch {
@@ -130,6 +134,9 @@ export function createAuthStore(
       }
       api.setToken(null);
       await storage.clearToken();
+      // Reset the unread store — otherwise the next user to log in on
+      // this Electron session briefly sees the previous user's badges.
+      useUnreadStore.setState({ counts: {}, totalUnread: 0 });
       // Don't clear the E2EE keypair on logout — same user signing back in
       // on this device should still decrypt their old DMs. Use clearKeyPair()
       // explicitly during a "switch user / forget me" flow.

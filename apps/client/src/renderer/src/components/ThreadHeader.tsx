@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { MuteLevel } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
@@ -15,6 +15,19 @@ export function ThreadHeader({ threadType, threadId, title, subtitle }: Props): 
   const token = useAuthStore((s) => s.token);
   const [level, setLevel] = useState<MuteLevel>("all");
   const [busy, setBusy] = useState(false);
+
+  // Pull the persisted mute level so the dropdown reflects reality on open.
+  // Without this it always defaults to "all" — confusing if the user
+  // already muted the thread previously.
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) return;
+    const api = new ApiClient(serverUrl); api.setToken(token);
+    void api.getMute(threadType, threadId).then((r) => {
+      if (!cancelled) setLevel(r.level);
+    }).catch(() => { /* default "all" if fetch fails */ });
+    return () => { cancelled = true; };
+  }, [serverUrl, token, threadType, threadId]);
 
   const setMute = useCallback(async (next: MuteLevel) => {
     setBusy(true);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { ChatMessageDTO } from "@redvoice/shared";
 import { ApiClient } from "../lib/api.js";
-import { ChatTransport } from "../lib/chat-transport.js";
+import { ensureTransport, setCurrentlyViewingThread, type ChatTransport } from "../lib/chat-transport.js";
 import { useAuthStore } from "../lib/auth-context.js";
 import { decryptDM, encryptDM, type EncryptedDMPayload } from "../lib/crypto.js";
 import { loadKeyPair } from "../lib/key-storage.js";
@@ -61,8 +61,12 @@ export function RoomChatPanel({
     api.setToken(token);
     apiRef.current = api;
 
-    const transport = new ChatTransport(serverUrl, token, api);
+    // Use the app-wide singleton transport — established at login. Without
+    // it WS-targeted events (mentions, friend events, presence) silently
+    // drop whenever no chat panel is mounted.
+    const transport = ensureTransport(serverUrl, token);
     transportRef.current = transport;
+    setCurrentlyViewingThread({ threadType, threadId });
 
     let cancelled = false;
     void api
@@ -107,14 +111,15 @@ export function RoomChatPanel({
       }
     });
 
-    transport.start();
+    // Singleton is already started by App.tsx; just subscribe to this thread.
     transport.subscribe(threadType, threadId);
 
     return () => {
       cancelled = true;
       off();
       transport.unsubscribe(threadType, threadId);
-      transport.stop();
+      // Don't stop the transport — it lives for the whole logged-in session.
+      setCurrentlyViewingThread(null);
       apiRef.current = null;
       transportRef.current = null;
     };

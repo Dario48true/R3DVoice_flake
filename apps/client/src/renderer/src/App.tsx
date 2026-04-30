@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { AuthProvider, useAuthStore, useNeedsHandle } from "./lib/auth-context.js";
-import { setCurrentUserForNotifications } from "./lib/chat-transport.js";
+import { disconnectTransport, ensureTransport, setCurrentUserForNotifications } from "./lib/chat-transport.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { HandlePickGate } from "./components/HandlePickGate.js";
@@ -14,10 +14,28 @@ function Router(): ReactElement {
   const status = useAuthStore((s) => s.status);
   const needsHandle = useNeedsHandle();
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
+  const serverUrl = useAuthStore((s) => s.serverUrl);
 
   useEffect(() => {
     setCurrentUserForNotifications(user ?? null);
   }, [user]);
+
+  // App-wide WS lifecycle. The transport must exist for the entire logged-in
+  // session — otherwise WS-targeted events (mentions, friend requests,
+  // invite redemptions, presence updates) silently drop whenever the user
+  // isn't viewing a chat panel. Connect on auth, disconnect on logout.
+  useEffect(() => {
+    if (token && serverUrl) {
+      ensureTransport(serverUrl, token);
+      return () => {
+        // Don't disconnect on every re-render — only on actual logout
+        // (token cleared). The next branch handles that.
+      };
+    }
+    disconnectTransport();
+    return undefined;
+  }, [token, serverUrl]);
 
   const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(() => {
     try {

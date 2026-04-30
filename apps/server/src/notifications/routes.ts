@@ -36,6 +36,29 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     return await computeUnread(userId);
   });
 
+  app.get<{ Params: { threadType: string; threadId: string } }>(
+    "/chat/threads/:threadType/:threadId/mute",
+    { preHandler: requireAuth },
+    async (request) => {
+      const userId = request.auth!.userId;
+      const { threadType, threadId } = request.params;
+      if (threadType !== "room" && threadType !== "dm") {
+        throw new ValidationError("invalid threadType");
+      }
+      const row = await prisma.threadMuteState.findUnique({
+        where: { userId_threadType_threadId: { userId, threadType, threadId } },
+      });
+      // Absent row means default ("all"); the row is only persisted when
+      // the user picks something other than the default.
+      return {
+        threadType,
+        threadId,
+        level: row?.level ?? "all",
+        mutedUntil: row?.mutedUntil?.toISOString() ?? null,
+      };
+    },
+  );
+
   app.patch<{ Params: { threadType: string; threadId: string } }>(
     "/chat/threads/:threadType/:threadId/mute",
     { preHandler: requireAuth },

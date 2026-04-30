@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { InviteDTO } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
+import { getTransport } from "../lib/chat-transport.js";
 
 export function MyInvitesList(): ReactElement {
   const serverUrl = useAuthStore((s) => s.serverUrl);
@@ -19,6 +20,16 @@ export function MyInvitesList(): ReactElement {
   }, [serverUrl, token]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Live update: bump the row when someone redeems one of our invites so
+  // the uses count reflects reality immediately.
+  useEffect(() => {
+    const t = getTransport();
+    if (!t) return;
+    return t.on((event) => {
+      if (event.type === "invite.redeemed") void refresh();
+    });
+  }, [refresh]);
 
   const revoke = useCallback(async (id: string) => {
     const api = new ApiClient(serverUrl); api.setToken(token);

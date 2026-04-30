@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from "react";
 import type { DmThreadEntry } from "@redvoice/shared";
 import { useAuthStore } from "../lib/auth-context.js";
 import { ApiClient } from "../lib/api.js";
+import { getTransport } from "../lib/chat-transport.js";
 import { DmThreadList } from "../components/DmThreadList.js";
 import { FriendsPane } from "../components/FriendsPane.js";
 import { NewDmPicker } from "../components/NewDmPicker.js";
@@ -46,6 +47,22 @@ export function DmsScreen(): ReactElement {
     void api.markRead("dm", active);
     useUnreadStore.getState().clearThread("dm", active);
   }, [active, serverUrl, token]);
+
+  // Live updates: refresh the DM thread list when a new message lands or
+  // when the active thread changes (so the last-message preview stays in
+  // sync). Without this, sending or receiving a message in an open thread
+  // wouldn't update its preview row in the left rail until full refresh.
+  useEffect(() => {
+    const t = getTransport();
+    if (!t) return;
+    return t.on((event) => {
+      if (event.type === "message" && event.message.threadType === "dm") {
+        void refresh();
+      } else if (event.type === "chat.mention" && event.message.threadType === "dm") {
+        void refresh();
+      }
+    });
+  }, [refresh]);
 
   // Sync displayed peer when user picks an existing thread.
   useEffect(() => {

@@ -252,6 +252,10 @@ export class ApiClient {
     return this.request("GET", "/chat/unread");
   }
 
+  getMute(threadType: "room" | "dm", threadId: string): Promise<{ threadType: string; threadId: string; level: MuteLevel; mutedUntil: string | null }> {
+    return this.request("GET", `/chat/threads/${threadType}/${encodeURIComponent(threadId)}/mute`);
+  }
+
   async setMute(threadType: "room" | "dm", threadId: string, level: MuteLevel, mutedUntil?: string | null): Promise<void> {
     const body: { level: MuteLevel; mutedUntil?: string | null } = { level };
     if (mutedUntil !== undefined) body.mutedUntil = mutedUntil;

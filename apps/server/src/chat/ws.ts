@@ -11,6 +11,7 @@ import {
   unsubscribeAll,
   markOnline,
   markOffline,
+  sendToUser,
   type ConnectedSocket,
 } from "./ws-state.js";
 
@@ -95,6 +96,37 @@ export async function chatWsRoutes(app: FastifyInstance): Promise<void> {
     sock.on("close", () => {
       unsubscribeAll(conn);
       markOffline(conn);
+      // Clear the user's currentRoomId on disconnect — otherwise crashed/
+      // network-dropped clients leave their friends seeing them "in
+      // <Room>" forever. We also broadcast presence.update so friends'
+      // friend cards refresh immediately.
+      void (async () => {
+        try {
+          const before = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { currentRoomId: true },
+          });
+          if (!before?.currentRoomId) return;
+          await prisma.user.update({
+            where: { id: userId },
+            data: { currentRoomId: null },
+          });
+          const friends = await prisma.friendship.findMany({
+            where: {
+              status: "accepted",
+              OR: [{ requesterId: userId }, { recipientId: userId }],
+            },
+            select: { requesterId: true, recipientId: true },
+          });
+          const payload = { type: "presence.update" as const, userId, currentRoom: null };
+          for (const f of friends) {
+            const friendId = f.requesterId === userId ? f.recipientId : f.requesterId;
+            sendToUser(friendId, payload);
+          }
+        } catch {
+          /* best-effort cleanup */
+        }
+      })();
     });
 
     // Ack so client knows we're authenticated + ready.
