@@ -130,8 +130,8 @@ export async function friendsRoutes(app: FastifyInstance): Promise<void> {
       if (!parsed.success) throw new ValidationError("invalid handle");
       const userId = request.auth!.userId;
 
-      const recipient = await prisma.user.findFirst({
-        where: { handle: parsed.data.handle.toLowerCase() },
+      const recipient = await prisma.user.findUnique({
+        where: { handleLower: parsed.data.handle.toLowerCase() },
         select: { id: true, displayName: true, email: true, handle: true },
       });
       if (!recipient) throw new NotFoundError("no user with that handle");

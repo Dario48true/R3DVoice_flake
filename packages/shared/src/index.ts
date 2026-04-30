@@ -186,7 +186,7 @@ export const userHandleSchema = z
   .string()
   .min(3, "handle must be at least 3 characters")
   .max(24, "handle must be at most 24 characters")
-  .regex(/^[a-z0-9_]+$/, "handle may only contain lowercase letters, digits, and underscores");
+  .regex(/^[A-Za-z0-9_]+$/, "handle may only contain letters, digits, and underscores");
 
 export type UserHandle = z.infer<typeof userHandleSchema>;
 

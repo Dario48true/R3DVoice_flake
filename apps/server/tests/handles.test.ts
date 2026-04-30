@@ -32,7 +32,7 @@ describe("handles", () => {
   it("POST /me/handle rejects invalid format", async () => {
     const app = await buildApp();
     const { token } = await registerUser(app, { email: "a@x.com" });
-    for (const bad of ["ab", "Has-Dashes", "WITH_CAPS", "x".repeat(25), ""]) {
+    for (const bad of ["ab", "Has-Dashes", "with spaces", "with.dots", "x".repeat(25), ""]) {
       const res = await app.inject({
         method: "POST", url: "/me/handle", headers: authHeader(token), payload: { handle: bad },
       });
@@ -64,5 +64,24 @@ describe("handles", () => {
     const a = await registerUser(app, { email: "a@x.com" });
     const res = await app.inject({ method: "GET", url: "/users/by-handle/ghost", headers: authHeader(a.token) });
     expect(res.statusCode).toBe(404);
+  });
+
+  it("preserves user-typed casing on the handle column", async () => {
+    const app = await buildApp();
+    const { token } = await registerUser(app, { email: "a@x.com" });
+    await app.inject({ method: "POST", url: "/me/handle", headers: authHeader(token), payload: { handle: "RedWolf" } });
+    const res = await app.inject({ method: "GET", url: "/users/by-handle/redwolf", headers: authHeader(token) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ handle: "RedWolf" });
+  });
+
+  it("rejects collisions case-insensitively (Red vs red)", async () => {
+    const app = await buildApp();
+    const a = await registerUser(app, { email: "a@x.com" });
+    const b = await registerUser(app, { email: "b@x.com" });
+    await app.inject({ method: "POST", url: "/me/handle", headers: authHeader(a.token), payload: { handle: "Red" } });
+    const res = await app.inject({ method: "POST", url: "/me/handle", headers: authHeader(b.token), payload: { handle: "red" } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: { code: "HANDLE_TAKEN" } });
   });
 });

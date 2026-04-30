@@ -59,14 +59,14 @@ export function HandlePickGate(): ReactElement {
   return (
     <Modal open={true} onClose={() => { /* not dismissible */ }} title="Pick your handle" width="min(92vw, 480px)">
       <p style={{ color: "var(--text-mid)", marginBottom: "var(--s-4)" }}>
-        Your handle is how friends find you on RedVoice. 3–24 characters, lowercase letters, digits, or underscores. You can't change it later.
+        Your handle is how friends find you on RedVoice. 3–24 characters, letters, digits, or underscores. Case is preserved for display but @Red and @red are the same person. You can't change it later.
       </p>
       <input
         autoFocus
         className="rv-input"
-        placeholder="alpha"
+        placeholder="Alpha"
         value={value}
-        onChange={(e) => setValue(e.target.value.toLowerCase())}
+        onChange={(e) => setValue(e.target.value)}
         disabled={busy}
         onKeyDown={(e) => { if (e.key === "Enter" && available === "yes") void submit(); }}
       />

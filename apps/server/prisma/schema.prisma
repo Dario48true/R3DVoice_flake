@@ -22,8 +22,12 @@ model User {
   // because legacy accounts created before E2EE shipped won't have one.
   e2eePublicKey String?
 
-  handle   String?  @unique
-  dndUntil DateTime?
+  // handle is the user-displayed form (preserves casing chosen at signup).
+  // handleLower is the canonical case-insensitive form used for uniqueness
+  // and lookups so @Red and @red collide as the same identity.
+  handle      String?
+  handleLower String?  @unique
+  dndUntil    DateTime?
 
   sessions      Session[]
   ownedRooms    Room[]           @relation("RoomOwner")

@@ -18,10 +18,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const me = await prisma.user.findUnique({ where: { id: userId }, select: { handle: true } });
     if (me?.handle != null) throw new ConflictError("handle already set", "HANDLE_ALREADY_SET");
 
+    // Store the user-typed casing for display, plus the canonical lowercase
+    // form on which the unique constraint lives. @Red and @red collide.
+    const handle = parsed.data.handle;
+    const handleLower = handle.toLowerCase();
+
     try {
       const updated = await prisma.user.update({
         where: { id: userId },
-        data: { handle: parsed.data.handle },
+        data: { handle, handleLower },
         select: { id: true, handle: true, displayName: true, email: true },
       });
       return updated;
@@ -40,8 +45,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const parsed = handleParamSchema.safeParse(request.params);
       if (!parsed.success) throw new ValidationError("invalid handle");
       const lower = parsed.data.handle.toLowerCase();
-      const user = await prisma.user.findFirst({
-        where: { handle: lower },
+      const user = await prisma.user.findUnique({
+        where: { handleLower: lower },
         select: { id: true, handle: true, displayName: true },
       });
       if (!user) throw new NotFoundError("user not found");
