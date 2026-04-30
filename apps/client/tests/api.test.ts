@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ApiClient, ApiError } from "../src/renderer/src/lib/api.js";
+import { extractInviteCode } from "../src/renderer/src/lib/rooms-store.js";
 
 const BASE = "http://localhost:3000";
 
@@ -91,5 +92,52 @@ describe("ApiClient", () => {
     expect(String(url)).toBe("http://localhost:3000/rooms");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(init?.body as string)).toEqual({ name: "G" });
+  });
+
+  it("createInvite POSTs /invites with the right body", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ id: "i1", code: "ABCDEFGH" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const api = new ApiClient(BASE);
+    api.setToken("tok");
+    await api.createInvite({ kind: "friend", expiresAt: null, maxUses: null });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3000/invites",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ kind: "friend", expiresAt: null, maxUses: null }),
+      }),
+    );
+  });
+});
+
+describe("extractInviteCode", () => {
+  it("recognizes a bare 8-char code", () => {
+    expect(extractInviteCode("ABCDEFGH")).toBe("ABCDEFGH");
+    expect(extractInviteCode("a2b3c4d5")).toBe("a2b3c4d5");
+  });
+
+  it("recognizes /invite/<code> URLs", () => {
+    expect(extractInviteCode("https://voice.r3dwolfie.com/invite/ABCDEFGH")).toBe("ABCDEFGH");
+    expect(extractInviteCode("http://localhost:3000/invite/MNPQRSTU")).toBe("MNPQRSTU");
+  });
+
+  it("rejects non-invite URLs", () => {
+    expect(extractInviteCode("https://voice.r3dwolfie.com/join/abc-123")).toBeNull();
+    expect(extractInviteCode("https://example.com")).toBeNull();
+    expect(extractInviteCode("not-a-url")).toBeNull();
+    expect(extractInviteCode("")).toBeNull();
+  });
+
+  it("rejects malformed codes", () => {
+    expect(extractInviteCode("SHORT")).toBeNull();
+    expect(extractInviteCode("TOOOLOONG")).toBeNull();
+  });
+
+  it("trims whitespace", () => {
+    expect(extractInviteCode("  ABCDEFGH  ")).toBe("ABCDEFGH");
   });
 });
