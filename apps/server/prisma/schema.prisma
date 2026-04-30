@@ -28,6 +28,8 @@ model User {
   handle      String?
   handleLower String?  @unique
   dndUntil    DateTime?
+  currentRoomId   String?
+  currentRoom     Room?    @relation("UserCurrentRoom", fields: [currentRoomId], references: [id], onDelete: SetNull)
 
   sessions      Session[]
   ownedRooms    Room[]           @relation("RoomOwner")
@@ -36,6 +38,8 @@ model User {
   friendshipsRequested  Friendship[] @relation("FriendshipRequester")
   friendshipsReceived   Friendship[] @relation("FriendshipRecipient")
   invites       Invite[]
+  threadReads     ThreadReadState[]
+  threadMutes     ThreadMuteState[]
 }
 
 model Session {
@@ -63,6 +67,7 @@ model Room {
   owner       User             @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   memberships RoomMembership[]
   invites     Invite[]
+  presentUsers    User[]   @relation("UserCurrentRoom")
 
   @@index([ownerId])
 }
@@ -93,6 +98,7 @@ model Message {
   threadId   String
   authorId   String
   body       String
+  mentions   String?
   createdAt  DateTime @default(now())
   editedAt   DateTime?
   deletedAt  DateTime?
@@ -141,4 +147,29 @@ model Invite {
 
   @@index([code])
   @@index([creatorId])
+}
+
+model ThreadReadState {
+  userId      String
+  threadType  String
+  threadId    String
+  lastReadAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, threadType, threadId])
+  @@index([userId])
+}
+
+model ThreadMuteState {
+  userId      String
+  threadType  String
+  threadId    String
+  level       String
+  mutedUntil  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, threadType, threadId])
+  @@index([userId])
 }
