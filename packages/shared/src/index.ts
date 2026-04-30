@@ -177,3 +177,61 @@ export interface ErrorResponse {
     message: string;  // human readable
   };
 }
+
+// Invite DTOs and validation schemas
+import { z } from "zod";
+
+export const userHandleSchema = z
+  .string()
+  .min(3, "handle must be at least 3 characters")
+  .max(24, "handle must be at most 24 characters")
+  .regex(/^[a-z0-9_]+$/, "handle may only contain lowercase letters, digits, and underscores");
+
+export type UserHandle = z.infer<typeof userHandleSchema>;
+
+export const inviteKindSchema = z.enum(["room", "friend"]);
+export type InviteKind = z.infer<typeof inviteKindSchema>;
+
+export const createInviteSchema = z
+  .object({
+    kind: inviteKindSchema,
+    targetRoomId: z.string().uuid().optional(),
+    expiresAt: z.string().datetime().nullable().optional(),
+    maxUses: z.number().int().positive().nullable().optional(),
+  })
+  .refine(
+    (v: any) => (v.kind === "room") === (v.targetRoomId !== undefined),
+    { message: "targetRoomId required for kind='room' and forbidden for kind='friend'" },
+  );
+
+export interface InviteDTO {
+  id: string;
+  code: string;
+  kind: InviteKind;
+  creatorId: string;
+  targetRoomId: string | null;
+  expiresAt: string | null;
+  maxUses: number | null;
+  uses: number;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface InvitePublicMetadataDTO {
+  code: string;
+  kind: InviteKind;
+  creator: { handle: string; displayName: string };
+  expiresAt: string | null;
+  maxUses: number | null;
+  uses: number;
+  revokedAt: string | null;
+}
+
+export interface InviteFullMetadataDTO extends InvitePublicMetadataDTO {
+  targetRoom?: { id: string; name: string; memberCount: number };
+}
+
+export interface InviteRedeemResultDTO {
+  kind: InviteKind;
+  redirectTo: string; // e.g. "/rooms/<id>" or "/dms"
+}
