@@ -94,4 +94,23 @@ export function broadcastToThread(
   }
 }
 
+/**
+ * Per-user direct event delivery. Use for notifications targeted at a
+ * specific user (mention, friend request, invite redeemed) — events the
+ * recipient should see regardless of which thread they're currently
+ * subscribed to. Iterates all of that user's open sockets.
+ */
+export function sendToUser(userId: string, payload: unknown): void {
+  const set = onlineSockets.get(userId);
+  if (!set || set.size === 0) return;
+  const data = JSON.stringify(payload);
+  for (const conn of set) {
+    try {
+      conn.socket.send(data);
+    } catch {
+      // half-closed; close handler cleans up
+    }
+  }
+}
+
 export type { ConnectedSocket };
