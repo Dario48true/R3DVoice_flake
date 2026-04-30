@@ -6,6 +6,7 @@ import { useAuthStore } from "../lib/auth-context.js";
 import { decryptDM, encryptDM, type EncryptedDMPayload } from "../lib/crypto.js";
 import { loadKeyPair } from "../lib/key-storage.js";
 import { I } from "./Icons.js";
+import { MentionAutocomplete } from "./MentionAutocomplete.js";
 
 interface Props {
   threadType: "room" | "dm";
@@ -13,6 +14,7 @@ interface Props {
   localIdentity: string;
   localName: string;
   onClose(): void;
+  mentionCandidates?: { id: string; handle: string; displayName: string }[];
 }
 
 // Persistent chat panel backed by REST + WebSocket (P5 T20).
@@ -25,6 +27,7 @@ export function RoomChatPanel({
   localIdentity,
   localName,
   onClose,
+  mentionCandidates = [],
 }: Props): ReactElement {
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const token = useAuthStore((s) => s.token);
@@ -32,6 +35,8 @@ export function RoomChatPanel({
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [draft, setDraft] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionAnchor, setMentionAnchor] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -184,6 +189,15 @@ export function RoomChatPanel({
     inputRef.current?.focus();
   };
 
+  const onPickMention = (c: { id: string; handle: string; displayName: string }): void => {
+    if (mentionQuery === null) return;
+    const before = draft.slice(0, mentionAnchor);
+    const after = draft.slice(mentionAnchor + 1 + mentionQuery.length);
+    setDraft(`${before}@${c.handle} ${after}`);
+    setMentionQuery(null);
+    inputRef.current?.focus();
+  };
+
   // Reference localIdentity/localName for "you" styling without warnings; both
   // come from props but we don't need them after the rewrite. Keep around for
   // future per-author UI tweaks.
@@ -301,20 +315,42 @@ export function RoomChatPanel({
           >
             <I.Smile size={16} />
           </button>
-          <input
-            ref={inputRef}
-            className="rv-input"
-            placeholder="Message…"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            style={{ flex: 1 }}
-          />
+          <div style={{ position: "relative", flex: 1 }}>
+            <input
+              ref={inputRef}
+              className="rv-input"
+              placeholder="Message…"
+              value={draft}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDraft(val);
+                const cursor = e.target.selectionStart ?? val.length;
+                const slice = val.slice(0, cursor);
+                const at = slice.lastIndexOf("@");
+                if (at >= 0 && /^[A-Za-z0-9_]*$/.test(slice.slice(at + 1)) && (at === 0 || /\W/.test(slice[at - 1]!))) {
+                  setMentionAnchor(at);
+                  setMentionQuery(slice.slice(at + 1));
+                } else {
+                  setMentionQuery(null);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              style={{ width: "100%" }}
+            />
+            {mentionQuery !== null && (
+              <MentionAutocomplete
+                query={mentionQuery}
+                candidates={mentionCandidates}
+                onPick={onPickMention}
+                onCancel={() => setMentionQuery(null)}
+              />
+            )}
+          </div>
           <button
             type="button"
             className="rv-btn rv-btn-icon"
