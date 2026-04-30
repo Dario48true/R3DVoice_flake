@@ -272,6 +272,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("auth:get-token", async () => getToken());
   ipcMain.handle("auth:clear-token", async () => clearToken());
   ipcMain.handle("app:platform", () => process.platform);
+  ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("keybind:set-ptt", (_evt, accelerator: unknown) => {
     const acc = typeof accelerator === "string" && accelerator.length > 0 ? accelerator : null;
     setPttKeybind(acc, (pressed) => {
