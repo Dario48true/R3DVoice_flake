@@ -49,6 +49,7 @@ function Router(): ReactElement {
       return null;
     }
   });
+  const [pendingJoinRoomId, setPendingJoinRoomId] = useState<string | null>(null);
   const [topPage, setTopPage] = useState<TopPage>("lobby");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -91,6 +92,7 @@ function Router(): ReactElement {
           {topPage === "lobby" ? (
             <LobbyScreen
               pendingInviteCode={pendingInviteCode}
+              pendingJoinRoomId={pendingJoinRoomId}
               onInviteCodeConsumed={() => {
                 setPendingInviteCode(null);
                 try {
@@ -101,10 +103,16 @@ function Router(): ReactElement {
                   // ignore
                 }
               }}
+              onJoinRoomIdConsumed={() => setPendingJoinRoomId(null)}
               onInviteCode={(code) => setPendingInviteCode(code)}
             />
           ) : (
-            <DmsScreen />
+            <DmsScreen
+              onJoinRoom={(roomId) => {
+                setPendingJoinRoomId(roomId);
+                setTopPage("lobby");
+              }}
+            />
           )}
         </div>
         {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}

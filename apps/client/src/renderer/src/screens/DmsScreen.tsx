@@ -11,7 +11,11 @@ import { ThreadHeader } from "../components/ThreadHeader.js";
 import { I } from "../components/Icons.js";
 import { useUnreadStore } from "../lib/unread-store.js";
 
-export function DmsScreen(): ReactElement {
+type DmsScreenProps = {
+  onJoinRoom?: (roomId: string) => void;
+};
+
+export function DmsScreen({ onJoinRoom }: DmsScreenProps = {}): ReactElement {
   const me = useAuthStore((s) => s.user);
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const token = useAuthStore((s) => s.token);
@@ -77,10 +81,9 @@ export function DmsScreen(): ReactElement {
     void refresh();
   }, [refresh]);
 
-  // TODO(Plan 4): wire to unified navigation when room-join is centralised.
-  const handleJoinRoom = useCallback((_roomId: string) => {
-    void _roomId; // no-op until navigation is unified
-  }, []);
+  const handleJoinRoom = useCallback((roomId: string) => {
+    onJoinRoom?.(roomId);
+  }, [onJoinRoom]);
 
   if (!me) return <div />;
 

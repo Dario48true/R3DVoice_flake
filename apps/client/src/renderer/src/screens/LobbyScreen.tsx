@@ -43,11 +43,13 @@ function avatarTone(id: string): 1 | 2 | 3 | 4 | 5 {
 
 interface LobbyScreenProps {
   pendingInviteCode?: string | null;
+  pendingJoinRoomId?: string | null;
   onInviteCodeConsumed?: () => void;
+  onJoinRoomIdConsumed?: () => void;
   onInviteCode?: (code: string) => void;
 }
 
-export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteCode }: LobbyScreenProps = {}): ReactElement {
+export function LobbyScreen({ pendingInviteCode, pendingJoinRoomId, onInviteCodeConsumed, onJoinRoomIdConsumed, onInviteCode }: LobbyScreenProps = {}): ReactElement {
   const token = useAuthStore((s) => s.token);
   const serverUrl = useAuthStore((s) => s.serverUrl);
 
@@ -70,6 +72,13 @@ export function LobbyScreen({ pendingInviteCode, onInviteCodeConsumed, onInviteC
   useEffect(() => {
     void store.getState().refresh();
   }, [store]);
+
+  useEffect(() => {
+    if (pendingJoinRoomId) {
+      void store.getState().join(pendingJoinRoomId);
+      onJoinRoomIdConsumed?.();
+    }
+  }, [pendingJoinRoomId, store, onJoinRoomIdConsumed]);
 
   // Transition to invite phase when a pending invite code arrives from App.tsx.
   useEffect(() => {
