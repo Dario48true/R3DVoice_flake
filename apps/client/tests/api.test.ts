@@ -132,6 +132,20 @@ describe("ApiClient", () => {
     const r = await api.dmThreads();
     expect(r.threads[0]!.otherParticipant).toMatchObject({ id: "bbb", handle: "bob" });
   });
+
+  it("getUnread parses counts response", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({
+        counts: { "dm:a:b": 3, "dm:c:d": 1 },
+        totalUnread: 4,
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const api = new ApiClient(BASE);
+    api.setToken("tok");
+    const r = await api.getUnread();
+    expect(r.totalUnread).toBe(4);
+    expect(r.counts["dm:a:b"]).toBe(3);
+  });
 });
 
 describe("extractInviteCode", () => {

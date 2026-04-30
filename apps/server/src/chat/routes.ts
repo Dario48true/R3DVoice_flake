@@ -63,6 +63,7 @@ function toDTO(m: {
       body = m.body;
     }
   }
+  const parsed = m.mentions ? (JSON.parse(m.mentions) as string[]) : undefined;
   return {
     id: m.id,
     threadType: m.threadType as ThreadType,
@@ -73,7 +74,7 @@ function toDTO(m: {
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt?.toISOString() ?? null,
     deletedAt: m.deletedAt?.toISOString() ?? null,
-    mentions: m.mentions ? JSON.parse(m.mentions) as string[] : undefined,
+    ...(parsed !== undefined && { mentions: parsed }),
   };
 }
 
