@@ -118,6 +118,59 @@ function computeScreenShareBitrate(width: number, height: number, fps: number): 
 }
 
 /**
+ * Walk an RTCStatsReport and log the active ICE candidate pair. Tells us
+ * whether the media transport is host/srflx/relay and udp/tcp — the single
+ * most useful piece of info for diagnosing remote-screenshare collapse:
+ *   - relay/tcp     → media is going through TURN-TCP, head-of-line blocked
+ *   - relay/udp     → TURN/UDP, fine but adds a hop
+ *   - srflx/udp     → STUN-discovered direct, ideal
+ *   - host/udp      → LAN, ideal
+ */
+async function logIceCandidatePair(
+  source: string,
+  getReport: () => Promise<RTCStatsReport | null | undefined>,
+): Promise<void> {
+  try {
+    const report = await getReport();
+    if (!report) return;
+    const pairs: Record<string, unknown>[] = [];
+    const cands: Record<string, Record<string, unknown>> = {};
+    const transports: Record<string, unknown>[] = [];
+    report.forEach((s: { type: string; id?: string; [k: string]: unknown }) => {
+      if (s.type === "candidate-pair") pairs.push(s);
+      else if (s.type === "local-candidate" || s.type === "remote-candidate") {
+        if (s.id) cands[s.id] = s;
+      } else if (s.type === "transport") transports.push(s);
+    });
+    let active = pairs.find((p) => p["nominated"] === true && p["state"] === "succeeded");
+    if (!active) {
+      const sel = transports[0]?.["selectedCandidatePairId"] as string | undefined;
+      if (sel) active = pairs.find((p) => p["id"] === sel);
+    }
+    if (!active) active = pairs.find((p) => p["state"] === "succeeded");
+    if (!active) return;
+    const localId = active["localCandidateId"] as string | undefined;
+    const remoteId = active["remoteCandidateId"] as string | undefined;
+    const local = localId ? cands[localId] : undefined;
+    const remote = remoteId ? cands[remoteId] : undefined;
+    const rttMs = active["currentRoundTripTime"] as number | undefined;
+    const bweOut = active["availableOutgoingBitrate"] as number | undefined;
+    const bweIn = active["availableIncomingBitrate"] as number | undefined;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[ice:${source}] local=${local?.["candidateType"] ?? "?"}/${local?.["protocol"] ?? "?"} ` +
+        `remote=${remote?.["candidateType"] ?? "?"}/${remote?.["protocol"] ?? "?"} ` +
+        `relayProto=${local?.["relayProtocol"] ?? "-"} ` +
+        `rtt=${rttMs != null ? (rttMs * 1000).toFixed(0) + "ms" : "?"} ` +
+        `bweOut=${bweOut != null ? (bweOut / 1000).toFixed(0) + "kbps" : "?"} ` +
+        `bweIn=${bweIn != null ? (bweIn / 1000).toFixed(0) + "kbps" : "?"}`,
+    );
+  } catch {
+    /* logging only */
+  }
+}
+
+/**
  * Linux: capture screenshare audio. Two paths:
  *
  * 1. If `preferLabelContains` matches a virtual venmic device (e.g.
@@ -211,7 +264,15 @@ export class LiveKitRoom {
           maxBitrate: 4_000_000,
           maxFramerate: 60,
         },
-        videoCodec: "h264" as const,
+        // VP9 over H.264: on Linux/Windows Chromium without a VAAPI/MediaFoundation
+        // hardware encoder enabled, "h264" falls back to OpenH264 (Cisco's
+        // *software* encoder), which can't sustain 1080p60 on a typical
+        // friend's laptop CPU → publisher encoder framerate craters to ~1 fps
+        // and every receiver sees that 1 fps. The diagnostics confirmed this:
+        // impl=OpenH264 for both camera and screen share. VP9's software
+        // encoder (libvpx) is faster, codes flat screen content far better
+        // than H.264, and has hardware decode on every modern receiver.
+        videoCodec: "vp9" as const,
       },
       ...(options.enableE2EE && this.keyProvider
         ? {
@@ -278,8 +339,81 @@ export class LiveKitRoom {
     });
     this.room.on(RoomEvent.ParticipantConnected, () => this.emit());
     this.room.on(RoomEvent.ParticipantDisconnected, () => this.emit());
-    this.room.on(RoomEvent.TrackSubscribed, () => this.emit());
+    this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      // Receiver-side stats sampling for remote video tracks. Mirrors the
+      // sender-side block in LocalTrackPublished — together they reveal
+      // whether the bottleneck is at the publisher (low fps encoded), in
+      // transit (TCP relay / packet loss / BWE), or at the decoder (slow
+      // software decode → freezes). Critical for diagnosing the
+      // remote-screenshare-1fps complaint that sender-side overrides
+      // alone can't fix.
+      if (track.kind === "video") {
+        const rtrack = track as RemoteTrack;
+        const sample = async (): Promise<void> => {
+          try {
+            const report = await rtrack.getRTCStatsReport();
+            if (!report) return;
+            for (const r of report.values() as Iterable<{ type: string; kind?: string; [k: string]: unknown }>) {
+              if (r.type !== "inbound-rtp" || r.kind !== "video") continue;
+              const fps = (r["framesPerSecond"] as number | undefined) ?? 0;
+              const decoded = (r["framesDecoded"] as number | undefined) ?? 0;
+              const dropped = (r["framesDropped"] as number | undefined) ?? 0;
+              const freezes = (r["freezeCount"] as number | undefined) ?? 0;
+              const freezeDur = (r["totalFreezesDuration"] as number | undefined) ?? 0;
+              const bytes = (r["bytesReceived"] as number | undefined) ?? 0;
+              const decoder = (r["decoderImplementation"] as string | undefined) ?? "?";
+              const mime = (r["mimeType"] as string | undefined) ?? "?";
+              const jit = r["jitter"] as number | undefined;
+              const nack = (r["nackCount"] as number | undefined) ?? 0;
+              const pli = (r["pliCount"] as number | undefined) ?? 0;
+              const fir = (r["firCount"] as number | undefined) ?? 0;
+              const w = (r["frameWidth"] as number | undefined) ?? "?";
+              const h = (r["frameHeight"] as number | undefined) ?? "?";
+              const lost = (r["packetsLost"] as number | undefined) ?? 0;
+              // eslint-disable-next-line no-console
+              console.log(
+                `[recv:${participant.identity}/${pub.source}] ` +
+                  `fps=${typeof fps === "number" ? fps.toFixed(1) : fps} ` +
+                  `${w}x${h} decoded=${decoded} dropped=${dropped} ` +
+                  `freezes=${freezes} freezeDur=${freezeDur.toFixed(1)}s ` +
+                  `bytes=${(bytes / 1024).toFixed(0)}KB ` +
+                  `decoder=${decoder} codec=${mime} ` +
+                  `jitter=${jit != null ? (jit * 1000).toFixed(0) + "ms" : "?"} ` +
+                  `lost=${lost} nack=${nack} pli=${pli} fir=${fir}`,
+              );
+            }
+          } catch {
+            /* */
+          }
+        };
+        const handle = setInterval(() => void sample(), 3000);
+        // First read after 1.5s and full ICE-pair log — gives a baseline
+        // before BWE has stabilised.
+        setTimeout(() => void sample(), 1500);
+        void logIceCandidatePair(
+          `recv:${participant.identity}/${pub.source}`,
+          () => rtrack.getRTCStatsReport(),
+        );
+        const onUnsub = (
+          _t: RemoteTrack,
+          unsubPub: RemoteTrackPublication,
+        ): void => {
+          if (unsubPub.trackSid === pub.trackSid) {
+            clearInterval(handle);
+            this.room.off(RoomEvent.TrackUnsubscribed, onUnsub);
+          }
+        };
+        this.room.on(RoomEvent.TrackUnsubscribed, onUnsub);
+      }
+      this.emit();
+    });
     this.room.on(RoomEvent.TrackUnsubscribed, () => this.emit());
+    // Mute/unmute changes flip whether a publication's track produces
+    // frames. The UI's findScreenTrack/findCameraTrack filter out muted
+    // pubs (so muted tiles fall back to the avatar instead of staying
+    // black), so the snapshot needs to recompute on these events.
+    this.room.on(RoomEvent.TrackMuted, () => this.emit());
+    this.room.on(RoomEvent.TrackUnmuted, () => this.emit());
     this.room.on(RoomEvent.ActiveSpeakersChanged, () => this.emit());
     this.room.on(RoomEvent.LocalTrackPublished, (pub) => {
       // pub.mimeType is empty at publish time — SDP negotiation hasn't
@@ -471,7 +605,7 @@ export class LiveKitRoom {
               maxFramerate: q.frameRate,
               priority: "high",
             },
-            videoCodec: "h264",
+            videoCodec: "vp9",
             degradationPreference: "maintain-framerate",
           },
         );
@@ -533,57 +667,61 @@ export class LiveKitRoom {
       const h = opts.sourceHeight ?? 1080;
       const shouldScaleDown = w >= 1920 || h >= 1080;
 
-      // setParameters has strict rules: the params object must come from a
-      // fresh getParameters call (transactionId must round-trip with no
-      // async gap), and Chromium rejects the *whole* call if even one
-      // field is "unimplemented". v0.5.9 hit
-      //   "Attempted to set an unimplemented parameter of RtpParameters"
-      // because RTCRtpEncodingParameters.priority is the legacy name that
-      // Chromium dropped — only networkPriority is accepted. Removing
-      // priority and going through tiered fallbacks so we land *some*
-      // override even on stricter Chromium builds.
-      const tryApply = async (
+      // setParameters rejects the *whole* call if even one field is
+      // "unimplemented" in this Chromium build. v0.5.9 hit this on
+      // legacy `priority`. v0.5.10 switched to `networkPriority` but
+      // diagnostics show the "full" tier still gets rejected on Electron
+      // 35 / Chromium for screenshare — likely degradationPreference
+      // can't co-occur with networkPriority in setParameters() in this
+      // build. The previous tiered fallback meant if "full" failed, we
+      // dropped networkPriority entirely — leaving Chromium's screenshare
+      // default of `low`, which is *worse* than "medium" default for
+      // real-time tracks.
+      //
+      // Now: each parameter is applied in its own setParameters call.
+      // Whatever Chromium accepts, we keep — partial success across the
+      // whole set instead of all-or-nothing.
+      const applyOne = async (
         mutate: (p: RTCRtpSendParameters) => void,
         label: string,
-      ): Promise<boolean> => {
+      ): Promise<void> => {
         try {
           const p = sender.getParameters();
           mutate(p);
           await sender.setParameters(p);
           // eslint-disable-next-line no-console
           console.log(`[screenshare] override applied (${label})`);
-          return true;
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(`[screenshare] override "${label}" rejected:`, err);
-          return false;
         }
       };
 
       void (async (): Promise<void> => {
-        // 1. Full override (degradation + scale + networkPriority)
-        if (await tryApply((p) => {
-          p.degradationPreference = "maintain-framerate";
+        // Most important: bump screenshare priority above default. Without
+        // this, screenshare yields to other traffic on the same connection.
+        await applyOne((p) => {
           for (const enc of p.encodings ?? []) {
             enc.networkPriority = "high";
-            if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
           }
-        }, "full")) return;
+        }, "netPriority=high");
 
-        // 2. Drop networkPriority (sometimes flagged as experimental)
-        if (await tryApply((p) => {
+        // Second: tell the encoder to drop resolution before frames when
+        // bandwidth-pressured. Source content is mostly motion (gameplay).
+        await applyOne((p) => {
           p.degradationPreference = "maintain-framerate";
-          for (const enc of p.encodings ?? []) {
-            if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
-          }
-        }, "no-network-priority")) return;
+        }, "degradation=maintain-framerate");
 
-        // 3. Last-resort: just scale-down — encoder will work less hard
-        await tryApply((p) => {
-          for (const enc of p.encodings ?? []) {
-            if (shouldScaleDown) enc.scaleResolutionDownBy = 1.5;
-          }
-        }, "scale-only");
+        // Third: pre-scale 1080p+ source down to ~720p so the encoder has
+        // an easier job under sustained load. Skip when source is already
+        // small enough — scaling 720p down to 480p hurts more than helps.
+        if (shouldScaleDown) {
+          await applyOne((p) => {
+            for (const enc of p.encodings ?? []) {
+              enc.scaleResolutionDownBy = 1.5;
+            }
+          }, "scaleDown=1.5");
+        }
       })();
 
       // Verify what actually stuck — cur values reveal whether the override

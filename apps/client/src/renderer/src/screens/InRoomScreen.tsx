@@ -104,7 +104,10 @@ function canonicalDmThreadId(a: string, b: string): string {
 
 function findScreenTrack(p: LocalParticipant | RemoteParticipant): Track | null {
   for (const pub of p.trackPublications.values()) {
-    if (pub.source === Track.Source.ScreenShare && pub.track) {
+    // Muted publications still hold a track but produce no frames — the
+    // <video> attached to it stays black. Treat them as absent so the tile
+    // falls back to the avatar instead of showing a dead black rectangle.
+    if (pub.source === Track.Source.ScreenShare && pub.track && !pub.isMuted) {
       return pub.track;
     }
   }
@@ -121,7 +124,7 @@ function hasScreenShare(p: LocalParticipant | null): boolean {
 
 function findCameraTrack(p: LocalParticipant | RemoteParticipant): Track | null {
   for (const pub of p.trackPublications.values()) {
-    if (pub.source === Track.Source.Camera && pub.track) {
+    if (pub.source === Track.Source.Camera && pub.track && !pub.isMuted) {
       return pub.track;
     }
   }
