@@ -49,7 +49,7 @@
               inherit (finalAttrs) pname version src;
               inherit pnpm;
               fetcherVersion = 4;
-              hash = "sha256-jNnoHN80t7Rbh/aoGcFL5l4vaWJaoFss7Y1WFnH2/Js=";
+              hash = "sha256-blzDVTttVC7s/WvAsbsfHVcRUi61hRmBA7GRCBUtTbQ=";
             };
 
             env = {
